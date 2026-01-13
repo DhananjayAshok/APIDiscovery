@@ -1,0 +1,143 @@
+from utils.parameter_handling import load_parameters, compute_secondary_parameters
+from utils import log_error, log_info, log_warn
+import click
+from datasets import load_dataset
+import os
+
+loaded_parameters = load_parameters()
+
+
+TEST_DATASETS = ["cruxeval", "mbpp", "humaneval"]
+TRAIN_DATASETS = []
+
+
+class ReformatPrompts:
+    pass
+
+    
+def anonymize_header(func_code: str) -> str:
+    assert func_code.count("def ") == 1, "Function code should contain exactly one function definition."
+    header_start = func_code.index("def ")
+    # find the next "(" after header_start
+    paren_index = func_code.index("(", header_start)
+    # the function name is between header_start + 4 and paren_index
+    anonymized_name = func_code[:header_start + 4] + "test_func" + func_code[paren_index:]
+    new_paren_index = anonymized_name.index("(", header_start)
+    paren_close_index = anonymized_name.index("):", new_paren_index)
+    args_raw = anonymized_name[new_paren_index + 1:paren_close_index].split(",")
+    preamble = anonymized_name[:header_start + 4]
+    header = anonymized_name[header_start+4:paren_close_index + 2]
+    body = anonymized_name[paren_close_index + 2:]
+    for i, arg_raw in enumerate(args_raw):
+        if ":" in arg_raw:
+            arg_raw = arg_raw.split(":")[0]
+        arg_name = arg_raw.strip()
+        # assumes the indent is 4 spaces
+        header = header.replace(f" {arg_name} ", f" arg{i} ")
+        header = header.replace(f" {arg_name}:", f" arg{i}:")        
+        header = header.replace(f",{arg_name}:", f",arg{i}:")
+        header = header.replace(f",{arg_name},", f",arg{i},")
+        header = header.replace(f",{arg_name} ", f",arg{i} ")
+        header = header.replace(f" {arg_name},", f" arg{i},")
+        header = header.replace(f"({arg_name} ", f"(arg{i} ")
+        header = header.replace(f"({arg_name},", f"(arg{i},")
+        header = header.replace(f" {arg_name}):", f" arg{i}):")
+        header = header.replace(f",{arg_name}):", f",arg{i}):")        
+        body = f"    {arg_name} = arg{i}\n" + body
+    anonymized_code = preamble + header + body
+    return anonymized_code
+
+
+class RawLoaders:
+    """
+    Returns the raw datasets in the form:
+
+    {
+        split: CSV
+    }
+
+    The CSV has guaranteed columns:
+    - "test_func": A body of code that imports required dependencies and defines a function called test_func fully. Can run exec on this code
+    - "inputs": List of strings representing arg inputs to test_func. Each string can be eval'd to get the actual input.
+    - "outputs": List of strings representing outputs from test_func. 
+
+    May have other columns.
+    - "raw_text": A rough prompt that was used to generate the function. May not be present in all datasets and may need rewriting. 
+    - 
+
+    The following pattern should work:
+    ```python
+    test_func_str = df["test_func"][0]
+    inputs = eval(df["inputs"][0])
+    outputs = eval(df["outputs"][0])
+    exec(test_func_str)
+    for inp, out in zip(inputs, outputs):
+        assert test_func(eval(inp)) == eval(out)
+    ```
+    """
+
+    @staticmethod
+    def load_cruxeval(parameters):
+        dataset = load_dataset("cruxeval-org/cruxeval", split="test").to_pandas()
+        # rename code column to test_func
+        dataset = dataset.rename(columns={"code": "test_func"})
+        dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
+        dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
+        return {"test": dataset}
+    
+    @staticmethod
+    def load_humaneval(parameters):
+        dataset = load_dataset("openai/humaneval", split="test").to_pandas()
+        # remove the decode_cyclic question at row index 38
+        # rewrite the prompt in index 50 to be more clear:
+        new_50 = """
+def decode_shift(s: str):
+    \"\"\"
+    returns encoded string by shifting every character by -5 in the alphabet
+    \"\"\"
+    
+        """
+        dataset.at[50, 'prompt'] = new_50
+        dataset = dataset.drop(index=38).reset_index(drop=True)
+        def drop_docstrings(prompt):
+            while '"""' in prompt:
+                first_index = prompt.index('"""')
+                second_index = prompt.index('"""', first_index + 3)
+                prompt = prompt[:first_index] + prompt[second_index + 3:]
+            return prompt
+        def last_function(prompt):
+            funcs = prompt.split("def ")
+            return "def " + funcs[-1]
+        
+
+        dataset['header_only'] = dataset['prompt'].apply(drop_docstrings)
+        dataset['function_only'] = dataset['prompt'].apply(last_function) + dataset['canonical_solution']
+        dataset["test_func"] = dataset['function_only'].apply(anonymize_header)
+        return dataset
+
+
+
+
+
+@click.command()
+@click.option("--dataset_name", required=True, help="The name of the dataset to load from the Hugging Face Hub.", type=click.Choice(TEST_DATASETS + TRAIN_DATASETS))
+@click.pass_obj
+def load_raw(parameters, dataset_name):
+    if dataset_name == "humaneval":
+        data_splits = RawLoaders.load_humaneval(parameters)
+        breakpoint()
+
+
+
+
+@click.group()
+@click.pass_context
+def main(ctx):
+    compute_secondary_parameters(loaded_parameters)
+    ctx.obj = loaded_parameters
+
+
+main.add_command(load_raw, name="load_raw")
+
+if __name__ == "__main__":
+    main()
