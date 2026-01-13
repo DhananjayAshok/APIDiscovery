@@ -34,6 +34,7 @@ def anonymize_header(func_code: str) -> str:
         arg_name = arg_raw.strip()
         # assumes the indent is 4 spaces
         header = header.replace(f" {arg_name} ", f" arg{i} ")
+        header = header.replace(f"({arg_name})", f"(arg{i})")        
         header = header.replace(f" {arg_name}:", f" arg{i}:")        
         header = header.replace(f",{arg_name}:", f",arg{i}:")
         header = header.replace(f",{arg_name},", f",arg{i},")
@@ -41,9 +42,11 @@ def anonymize_header(func_code: str) -> str:
         header = header.replace(f" {arg_name},", f" arg{i},")
         header = header.replace(f"({arg_name} ", f"(arg{i} ")
         header = header.replace(f"({arg_name},", f"(arg{i},")
-        header = header.replace(f"({arg_name}:", f"(arg{i},")        
+        header = header.replace(f"({arg_name}:", f"(arg{i}:")        
         header = header.replace(f" {arg_name}):", f" arg{i}):")
         header = header.replace(f",{arg_name}):", f",arg{i}):")        
+        if i == 0:
+            body = body + "\n"
         body = f"    {arg_name} = arg{i}\n" + body
     anonymized_code = preamble + header + body
     return anonymized_code
@@ -106,6 +109,13 @@ def decode_shift(s: str):
                 second_index = prompt.index('"""', first_index + 3)
                 prompt = prompt[:first_index] + prompt[second_index + 3:]
             return prompt
+        def get_setup(prompt):
+            all_funcs = prompt.split("def ")
+            if len(all_funcs) <= 1:
+                return ""
+            setup = "def ".join(all_funcs[:-1])
+            return setup
+        
         def last_function(prompt):
             funcs = prompt.split("def ")
             return "def " + funcs[-1]
@@ -113,7 +123,7 @@ def decode_shift(s: str):
 
         dataset['header_only'] = dataset['prompt'].apply(drop_docstrings)
         dataset['function_only'] = dataset['header_only'].apply(last_function) + dataset['canonical_solution']
-        dataset["test_func"] = dataset['function_only'].apply(anonymize_header)
+        dataset["test_func"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
         return dataset
 
 
