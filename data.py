@@ -16,18 +16,18 @@ class ReformatPrompts:
 
     
 def anonymize_header(func_code: str) -> str:
-    assert func_code.count("def ") == 1, "Function code should contain exactly one function definition."
     header_start = func_code.index("def ")
     # find the next "(" after header_start
     paren_index = func_code.index("(", header_start)
     # the function name is between header_start + 4 and paren_index
     anonymized_name = func_code[:header_start + 4] + "test_func" + func_code[paren_index:]
     new_paren_index = anonymized_name.index("(", header_start)
-    paren_close_index = anonymized_name.index("):", new_paren_index)
+    paren_close_index = anonymized_name.index(")", new_paren_index)
     args_raw = anonymized_name[new_paren_index + 1:paren_close_index].split(",")
+    def_end = anonymized_name.index(":", paren_close_index)
     preamble = anonymized_name[:header_start + 4]
-    header = anonymized_name[header_start+4:paren_close_index + 2]
-    body = anonymized_name[paren_close_index + 2:]
+    header = anonymized_name[header_start+4:def_end + 1]
+    body = anonymized_name[def_end + 1:]
     for i, arg_raw in enumerate(args_raw):
         if ":" in arg_raw:
             arg_raw = arg_raw.split(":")[0]
@@ -41,6 +41,7 @@ def anonymize_header(func_code: str) -> str:
         header = header.replace(f" {arg_name},", f" arg{i},")
         header = header.replace(f"({arg_name} ", f"(arg{i} ")
         header = header.replace(f"({arg_name},", f"(arg{i},")
+        header = header.replace(f"({arg_name}:", f"(arg{i},")        
         header = header.replace(f" {arg_name}):", f" arg{i}):")
         header = header.replace(f",{arg_name}):", f",arg{i}):")        
         body = f"    {arg_name} = arg{i}\n" + body
@@ -87,7 +88,7 @@ class RawLoaders:
     
     @staticmethod
     def load_humaneval(parameters):
-        dataset = load_dataset("openai/humaneval", split="test").to_pandas()
+        dataset = load_dataset("openai/openai_humaneval", split="test").to_pandas()
         # remove the decode_cyclic question at row index 38
         # rewrite the prompt in index 50 to be more clear:
         new_50 = """
@@ -111,7 +112,7 @@ def decode_shift(s: str):
         
 
         dataset['header_only'] = dataset['prompt'].apply(drop_docstrings)
-        dataset['function_only'] = dataset['prompt'].apply(last_function) + dataset['canonical_solution']
+        dataset['function_only'] = dataset['header_only'].apply(last_function) + dataset['canonical_solution']
         dataset["test_func"] = dataset['function_only'].apply(anonymize_header)
         return dataset
 
