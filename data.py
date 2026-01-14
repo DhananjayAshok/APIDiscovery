@@ -405,7 +405,7 @@ def decode_shift(s: str):
 class RunTestFunc:
     def __init__(self, func_code: str):
         self.func_code = func_code
-        self.exec_func() # defines the test_func in the local scope
+        exec(func_code)
         self.test_func = locals()["test_func"]
 
     def run_test(self, *args):
@@ -469,7 +469,7 @@ class FilteredLoader:
 @click.option("--dataset_name", required=True, help="The name of the dataset to load from the Hugging Face Hub.", type=click.Choice(TEST_DATASETS + TRAIN_DATASETS))
 @click.pass_obj
 def process_raw(parameters, dataset_name):
-    save_dir = parameters["data_dir"] + f"raw/{dataset_name}/"
+    save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
     os.makedirs(save_dir, exist_ok=True)
     if dataset_name == "humaneval":
         data_splits = RawLoaders.load_humaneval(parameters)
@@ -490,8 +490,8 @@ def process_raw(parameters, dataset_name):
 @click.option("--dataset_name", required=True, help="The name of the dataset to load from the Hugging Face Hub.", type=click.Choice(TEST_DATASETS + TRAIN_DATASETS))
 @click.pass_obj
 def process_final(parameters, dataset_name):
-    load_dir = parameters["data_dir"] + f"raw/{dataset_name}/"
-    save_dir = parameters["data_dir"] + f"final/{dataset_name}/"
+    load_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
+    save_dir = parameters["data_dir"] + f"/final/{dataset_name}/"
     huggingface_hub_username = parameters["huggingface_repo_namespace"]
     huggingface_hub_repo_name = "APIDiscoveryDataset"
     os.makedirs(save_dir, exist_ok=True)
@@ -524,3 +524,30 @@ main.add_command(process_final, name="process_final")
 
 if __name__ == "__main__":
     main()
+
+
+from typing import List
+
+def validate_input_args(arg0: List[float], arg1: float) -> None:
+    if not isinstance(arg0, list):
+        raise TypeError("arg0 must be a list")
+    for item in arg0:
+        if not isinstance(item, float):
+            raise TypeError("All elements in arg0 must be floats")
+    if not isinstance(arg1, float):
+        raise TypeError("arg1 must be a float")
+    return
+def test_func(arg0: List[float], arg1: float) -> bool:
+    validate_input_args(arg0, arg1)
+    threshold = arg1
+    numbers = arg0
+
+
+    for idx, elem in enumerate(numbers):
+        for idx2, elem2 in enumerate(numbers):
+            if idx != idx2:
+                distance = abs(elem - elem2)
+                if distance < threshold:
+                    return True
+
+    return False
