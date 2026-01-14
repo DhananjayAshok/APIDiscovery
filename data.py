@@ -90,6 +90,41 @@ Examples:
  [STOP]
 
 Now do this for the following function only. After that, say [STOP]
+Examples:
+"""
+    more_examples = """
+Given the function:
+[FUNC]
+
+We can have the following example inputs:
+[EXAMPLES]
+Create an exhaustive list of as many example inputs as you can make, which test various edge cases and functionality of the function. 
+Answer in the format: 
+ - (arg0, arg1, ..., argN)
+
+ When you have finished the list, say [STOP]
+
+Examples:
+"""
+    describe = """
+Given the function, briefly describe what the function does in a concise manner.
+Example:
+Function:
+test_func(arg0: List[float], arg1: float) -> bool:
+    threshold = arg1
+    numbers = arg0
+    for idx, elem in enumerate(numbers):
+        for idx2, elem2 in enumerate(numbers):
+            if idx != idx2:
+                distance = abs(elem - elem2)
+                if distance < threshold:
+                    return True
+
+    return False
+Description:
+Checks if there are any two distinct elements in the input list 'arg0' whose absolute difference is less than the specified 'arg1' threshold. It returns True if such a pair exists, otherwise it returns False.
+[STOP]
+Now, describe the following function only and then say [STOP]
 Function:
 
 """
@@ -171,21 +206,24 @@ class RawLoaders:
         dataset = load_dataset("cruxeval-org/cruxeval", split="test").to_pandas()
         # rename code column to test_func
         dataset = dataset.rename(columns={"code": "test_func"})
-        dataset["test_func_alone"] = dataset["test_func"].apply(anonymize_header)
+        dataset["test_func_anon"] = dataset["test_func"].apply(anonymize_header)
         #dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
         #dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
         def get_docstring_func(row):
-            func = row["test_func_alone"]
+            func = row["test_func_anon"]
             first_indented_line = func.index("    validate_input_args")
             # insert a docstring before this
             doc_text = "Example usage: \n" + ">>> test_func(" + row['input'] + ")\n" + ">>> " + row['output']
             func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
             return func
-        dataset["test_func_w_docstring"] = dataset.apply(get_docstring_func, axis=1)
-        dataset["validation_prompt"] = dataset["test_func_w_docstring"].apply(lambda x: Prompts.validation_creator + x)
-        dataset["example_prompt"] = dataset["test_func_w_docstring"].apply(lambda x: Prompts.example_creator + x)
+        dataset["test_func_anon_w_docstring"] = dataset.apply(get_docstring_func, axis=1)
+        dataset["validation_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x)
+        dataset["example_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
+        dataset["description_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.describe + x)
         dataset = RawLoaders.generate_validation(dataset)
         dataset = RawLoaders.generate_examples(dataset)
+        dataset = RawLoaders.generate_more_examples(dataset)
+        dataset = RawLoaders.generate_description(dataset)
         return {"test": dataset}
     
     @staticmethod
@@ -222,11 +260,14 @@ def decode_shift(s: str):
 
         dataset['header_only'] = dataset['prompt'].apply(drop_docstrings)
         dataset['function_only'] = dataset['header_only'].apply(last_function) + dataset['canonical_solution']
-        dataset["test_func_alone"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
-        dataset["validation_prompt"] = dataset["test_func_alone"].apply(lambda x: Prompts.validation_creator + x)
-        dataset["example_prompt"] = dataset["test_func_alone"].apply(lambda x: Prompts.example_creator + x)
+        dataset["test_func_anon"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
+        dataset["validation_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.validation_creator + x)
+        dataset["example_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.example_creator + x)
+        dataset["describe_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.describe + x)
         dataset = RawLoaders.generate_validation(dataset)
         dataset = RawLoaders.generate_examples(dataset)
+        dataset = RawLoaders.generate_more_examples(dataset)    
+        dataset = RawLoaders.generate_description(dataset)    
         return {"test": dataset}
 
     @staticmethod
@@ -247,7 +288,7 @@ def decode_shift(s: str):
                 return ""
             setup = "def ".join(funcs[:-1]) + "\n"
             return setup
-        dataset["test_func_alone"] = dataset["test_func"].apply(get_setup) + dataset["test_func"].apply(last_function).apply(anonymize_header)
+        dataset["test_func_anon"] = dataset["test_func"].apply(get_setup) + dataset["test_func"].apply(last_function).apply(anonymize_header)
 
         def rewrite_test_list(row):
             func = last_function(row["test_func"])
@@ -263,7 +304,7 @@ def decode_shift(s: str):
             # get the 
         dataset["test_list"] = dataset.apply(rewrite_test_list, axis=1)
         def add_docstring(row):
-            func = last_function(row['test_func_alone'])
+            func = last_function(row['test_func_anon'])
             text = row['prompt'].split("function to ")[-1].strip()
             test_list = row['test_list']
             text = text + "\nWill end up satisfying:\n" + "\n".join(test_list)
@@ -273,9 +314,11 @@ def decode_shift(s: str):
             new_func = header + "):" + docstring + body
             return new_func
         dataset["validation_prompt"] = dataset.apply(add_docstring, axis=1).apply(lambda x: Prompts.validation_creator + x)        
-        dataset["example_prompt"] = dataset["test_func_alone"].apply(lambda x: Prompts.example_creator + x)
+        dataset["example_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.example_creator + x)
+        dataset["description"] = dataset["prompt"].apply(lambda x: x.split("function to ")[-1].strip())
         dataset = RawLoaders.generate_validation(dataset)
         dataset = RawLoaders.generate_examples(dataset)
+        dataset = RawLoaders.generate_more_examples(dataset)
         return {"test": dataset}
     
     @staticmethod
@@ -295,6 +338,7 @@ def decode_shift(s: str):
     @staticmethod
     def generate_examples(df):
         model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
+        df["examples"] = None
         for index, row in tqdm(df.iterrows(), total=len(df)):
             prompt = row["example_prompt"]
             example_code = model.generate(prompt, max_new_tokens=500)
@@ -307,9 +351,39 @@ def decode_shift(s: str):
                 if line.startswith("(") and line.endswith(")"):                    
                     examples.append("test_func"+line)
             df.at[index, "examples"] = examples
+            function_str = prompt.split("Function: ")[-1].strip()
+            more_examples_prompt = Prompts.more_examples.replace("[FUNC]", function_str)
+            more_examples_prompt.replace("[EXAMPLES]", example_code)
+            df.at[index, "more_examples_prompt"] = more_examples_prompt
+        return df
+    
+    @staticmethod
+    def generate_more_examples(df):
+        model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
+        df["more_examples"] = None
+        for index, row in tqdm(df.iterrows(), total=len(df)):
+            prompt = row["more_examples_prompt"]
+            example_code = model.generate(prompt, max_new_tokens=500)
+            df.at[index, "more_examples_output"] = example_code
+            examples = []
+            for line in example_code.split("\n"):
+                line = line.strip()
+                if line.startswith("- "):
+                    line = line[2:].strip()
+                if line.startswith("(") and line.endswith(")"):                    
+                    examples.append("test_func"+line)
+            df.at[index, "more_examples"] = examples
         return df
 
-        
+    @staticmethod
+    def generate_description(df):
+        model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
+        df["description"] = None
+        for index, row in tqdm(df.iterrows(), total=len(df)):
+            prompt = row["describe_prompt"]
+            description = model.generate(prompt, max_new_tokens=200)
+            df.at[index, "description"] = description.replace("Description:", "").strip()
+        return df
 
 
 
@@ -318,6 +392,8 @@ def decode_shift(s: str):
 @click.option("--dataset_name", required=True, help="The name of the dataset to load from the Hugging Face Hub.", type=click.Choice(TEST_DATASETS + TRAIN_DATASETS))
 @click.pass_obj
 def load_raw(parameters, dataset_name):
+    save_dir = parameters["data_dir"] + f"raw/{dataset_name}/"
+    os.makedirs(save_dir, exist_ok=True)
     if dataset_name == "humaneval":
         data_splits = RawLoaders.load_humaneval(parameters)
     elif dataset_name == "cruxeval":
@@ -328,7 +404,9 @@ def load_raw(parameters, dataset_name):
         log_error(f"Dataset {dataset_name} not recognized.", parameters=parameters)
     for data_split in data_splits:
         csv = data_splits[data_split]
-        csv.to_csv(f"{dataset_name}_proc.csv", index=False)
+        csv_clean = csv[["test_func_anon", "description", "examples", "more_examples"]]
+        csv_clean.to_csv(f"{save_dir}/{data_split}_clean.csv", index=False)
+        csv.to_csv(f"{save_dir}/{data_split}_proc.csv", index=False)
 
 
 
