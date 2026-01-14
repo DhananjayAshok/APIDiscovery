@@ -200,7 +200,7 @@ def decode_shift(s: str):
         dataset["test_func_alone"] = dataset["test_func"].apply(anonymize_header)
         def add_docstring(row):
             func = row['test_func_alone']
-            text = row['text'].split("function to ")[-1].strip()
+            text = row['prompt'].split("function to ")[-1].strip()
             # in cruxeval, function declaration is always first and there are no type hints
             header, body = func.split("):", 1)
             docstring = f'    """\n    {text}\n    """'

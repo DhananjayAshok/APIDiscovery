@@ -36,6 +36,8 @@ class HuggingFaceModel(ModelInterface):
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         output_ids = self.model.generate(
             **inputs,
+            tokenizer=self.tokenizer,
+            stop_words=["[STOP]"],
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             pad_token_id=self.tokenizer.eos_token_id
