@@ -1,7 +1,9 @@
 from utils.parameter_handling import load_parameters, compute_secondary_parameters
 from utils import log_error, log_info, log_warn
+from utils.lm_inference import HuggingFaceModel
 import click
 from datasets import load_dataset
+from tqdm import tqdm
 import os
 
 loaded_parameters = load_parameters()
@@ -146,6 +148,7 @@ class RawLoaders:
         #dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
         #dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
         dataset["validation_prompt"] = dataset["test_func_alone"].apply(lambda x: Prompts.validation_creator + x)
+        dataset = RawLoaders.generate_validation(dataset)
         return {"test": dataset}
     
     @staticmethod
@@ -184,9 +187,10 @@ def decode_shift(s: str):
         dataset['function_only'] = dataset['header_only'].apply(last_function) + dataset['canonical_solution']
         dataset["test_func_alone"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
         dataset["validation_prompt"] = dataset["test_func_alone"].apply(lambda x: Prompts.validation_creator + x)
+        dataset = RawLoaders.generate_validation(dataset)
         return {"test": dataset}
 
-
+    @staticmethod
     def load_mbpp(parameters):
         # Muennighoff/mbpp
         dataset = load_dataset("Muennighoff/mbpp", "sanitized", split="test").to_pandas()
@@ -194,7 +198,7 @@ def decode_shift(s: str):
         dataset = dataset.rename(columns={"code": "test_func"})
         dataset["test_func_alone"] = dataset["test_func"].apply(anonymize_header)
         def add_docstring(row):
-            func = row['test_func']
+            func = row['test_func_alone']
             text = row['text'].split("function to ")[-1].strip()
             # in cruxeval, function declaration is always first and there are no type hints
             header, body = func.split("):", 1)
@@ -202,7 +206,19 @@ def decode_shift(s: str):
             new_func = header + "):" + docstring + body
             return new_func
         dataset["validation_prompt"] = dataset.apply(add_docstring, axis=1).apply(lambda x: Prompts.validation_creator + x)
+        dataset = RawLoaders.generate_validation(dataset)
         return {"test": dataset}
+    
+    @staticmethod
+    def generate_validation(df):
+        model = HuggingFaceModel("meta-llama/Meta-Llama-3-70B-Instruct")
+        for index, row in tqdm(df.iterrows(), total=len(df)):
+            prompt = row["validation_prompt"]
+            validation_code = model.generate(prompt, max_new_tokens=500)
+            df.at[index, "validation_code_full"] = validation_code
+        return df
+
+        
 
 
 
@@ -219,7 +235,9 @@ def load_raw(parameters, dataset_name):
         data_splits = RawLoaders.load_mbpp(parameters)
     else:
         log_error(f"Dataset {dataset_name} not recognized.", parameters=parameters)
-    breakpoint()
+    for data_split in data_splits:
+        csv = data_splits[data_split]
+        csv.to_csv(f"{dataset_name}_proc.csv", index=False)
 
 
 
