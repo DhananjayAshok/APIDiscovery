@@ -341,7 +341,7 @@ def decode_shift(s: str):
     @staticmethod
     def generate_validation(df):
         model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
-        for index, row in tqdm(df.iterrows(), total=len(df)):
+        for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating validation code"):
             prompt = row["validation_prompt"]
             validation_code = model.generate(prompt, max_new_tokens=500)
             df.at[index, "validation_output"] = validation_code
@@ -356,7 +356,7 @@ def decode_shift(s: str):
     def generate_examples(df):
         model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
         df["examples"] = None
-        for index, row in tqdm(df.iterrows(), total=len(df)):
+        for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating example inputs"):
             prompt = row["example_prompt"]
             example_code = model.generate(prompt, max_new_tokens=500)
             df.at[index, "example_output"] = example_code
@@ -378,7 +378,7 @@ def decode_shift(s: str):
     def generate_more_examples(df):
         model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
         df["more_examples"] = None
-        for index, row in tqdm(df.iterrows(), total=len(df)):
+        for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating more example inputs"):
             prompt = row["more_examples_prompt"]
             example_code = model.generate(prompt, max_new_tokens=500)
             df.at[index, "more_examples_output"] = example_code
@@ -396,7 +396,7 @@ def decode_shift(s: str):
     def generate_description(df):
         model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
         df["description"] = None
-        for index, row in tqdm(df.iterrows(), total=len(df)):
+        for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating descriptions"):
             prompt = row["describe_prompt"]
             description = model.generate(prompt, max_new_tokens=200)
             df.at[index, "description"] = description.replace("Description:", "").strip()
@@ -446,7 +446,7 @@ class FilteredLoader:
     def filter_annotate_dataset(df):
         random.seed(42)
         # dataset has columns: test_func_anon, examples, more_examples, description
-        for index, row in tqdm(df.iterrows(), total=len(df)):
+        for index, row in tqdm(df.iterrows(), total=len(df), desc="Filtering and annotating dataset"):
             test_func_code = row["test_func_anon"]
             all_examples = row["examples"] + row["more_examples"]
             # shuffle all examples
@@ -520,6 +520,7 @@ def main(ctx):
 
 
 main.add_command(process_raw, name="process_raw")
+main.add_command(process_final, name="process_final")
 
 if __name__ == "__main__":
     main()
