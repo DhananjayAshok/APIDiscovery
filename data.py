@@ -63,6 +63,7 @@ validate_input_args(arg0: tuple, arg1: tuple) -> None:
         raise TypeError("arg1 must be a tuple")
     return     
 [STOP]
+Now, generate the validate_input_args function for the following function only. After that, say [STOP]
 Function: 
 
 """
@@ -211,7 +212,7 @@ def decode_shift(s: str):
     
     @staticmethod
     def generate_validation(df):
-        model = HuggingFaceModel("meta-llama/Meta-Llama-3-70B-Instruct")
+        model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
         for index, row in tqdm(df.iterrows(), total=len(df)):
             prompt = row["validation_prompt"]
             validation_code = model.generate(prompt, max_new_tokens=500)
