@@ -1,3 +1,12 @@
+"""
+1. Load various code gen datasets, reshpape them into a common format:
+    - test_func_anon: The function code with anonymized function name and added validate_input_args call
+    - description: A brief description of what the function does
+    - examples: A list of example inputs to the function
+    - more_examples: A more exhaustive list of example inputs to the function
+2. Load the jsonl files and 
+"""
+
 from utils.parameter_handling import load_parameters, compute_secondary_parameters
 from utils import log_error, log_info, log_warn
 from utils.lm_inference import HuggingFaceModel
@@ -405,8 +414,8 @@ def load_raw(parameters, dataset_name):
     for data_split in data_splits:
         csv = data_splits[data_split]
         csv_clean = csv[["test_func_anon", "description", "examples", "more_examples"]]
-        csv_clean.to_csv(f"{save_dir}/{data_split}_clean.csv", index=False)
-        csv.to_csv(f"{save_dir}/{data_split}_proc.csv", index=False)
+        csv_clean.to_json(f"{save_dir}/{data_split}_clean.json", orient="records", lines=True)
+        csv.to_json(f"{save_dir}/{data_split}_proc.json", orient="records", lines=True)
 
 
 
