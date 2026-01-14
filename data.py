@@ -143,8 +143,8 @@ class RawLoaders:
         # rename code column to test_func
         dataset = dataset.rename(columns={"code": "test_func"})
         dataset["test_func_alone"] = dataset["test_func"].apply(anonymize_header)
-        dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
-        dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
+        #dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
+        #dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
         def add_docstring(row):
             func = row['test_func']
             text = row['text'].split("function to ")[-1].strip()
