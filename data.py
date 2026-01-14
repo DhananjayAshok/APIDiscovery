@@ -148,7 +148,14 @@ class RawLoaders:
         dataset["test_func_alone"] = dataset["test_func"].apply(anonymize_header)
         #dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
         #dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
-        dataset["validation_prompt"] = dataset["test_func_alone"].apply(lambda x: Prompts.validation_creator + x)
+        def get_docstring_func(row):
+            func = row["test_func_alone"]
+            first_indented_line = func.index("    validate_input_args")
+            # insert a docstring before this
+            doc_text = "Example usage: \n" + ">>> test_func(" + row['input'] + ")\n" + ">>> " + row['output']
+            func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+        dataset["test_func_w_docstring"] = dataset.apply(get_docstring_func, axis=1)
+        dataset["validation_prompt"] = dataset["test_func_w_docstring"].apply(lambda x: Prompts.validation_creator + x)
         dataset = RawLoaders.generate_validation(dataset)
         return {"test": dataset}
     
@@ -197,10 +204,35 @@ def decode_shift(s: str):
         dataset = load_dataset("Muennighoff/mbpp", "sanitized", split="test").to_pandas()
         # functionaly the exact same as cruxeval
         dataset = dataset.rename(columns={"code": "test_func"})
-        dataset["test_func_alone"] = dataset["test_func"].apply(anonymize_header)
+        dataset["test_func"] = dataset["test_func"].str.replace(") : \n", "):\n")
+        dataset["test_func"] = dataset["test_func"].str.replace(") :  \n", "):\n")        
+        dataset["test_func"] = dataset["test_func"].str.replace(") :\n", "):\n")        
+        def last_function(prompt):
+            funcs = prompt.split("def ")
+            return "def " + funcs[-1]
+        def get_setup(prompt):
+            funcs = prompt.split("def ")
+            if len(funcs) <= 1:
+                return ""
+            setup = "def ".join(funcs[:-1]) + "\n"
+            return setup
+        dataset["test_func_alone"] = dataset["test_func"].apply(get_setup) + dataset["test_func"].apply(last_function).apply(anonymize_header)
+
+        def rewrite_test_list(row):
+            func = last_function(row["test_func"])
+            # find the first ( after "def ")
+            paren_index = func.index("(", 4)
+            func_name = func[4:paren_index].strip()
+            test_list = row["test_list"]
+            test_list = test_list.replace(func_name, "test_func")
+            return test_list
+            # get the 
+        dataset["test_list"] = dataset.apply(rewrite_test_list, axis=1)
         def add_docstring(row):
-            func = row['test_func_alone']
+            func = last_function(row['test_func_alone'])
             text = row['prompt'].split("function to ")[-1].strip()
+            test_list = row['test_list']
+            text = text + "\nWill end up satisfying:\n" + test_list
             # in cruxeval, function declaration is always first and there are no type hints
             header, body = func.split("):", 1)
             docstring = f'    """\n    {text}\n    """'
@@ -216,7 +248,12 @@ def decode_shift(s: str):
         for index, row in tqdm(df.iterrows(), total=len(df)):
             prompt = row["validation_prompt"]
             validation_code = model.generate(prompt, max_new_tokens=500)
-            df.at[index, "validation_code_full"] = validation_code
+            df.at[index, "validation_output"] = validation_code
+            if "def validate_input_args(" in validation_code:
+                validation_code = validation_code.split("def validate_input_args(")[1]
+            if "return" in validation_code:
+                validation_code = validation_code.split("return")[0] + "return"
+            df.at[index, "validation_code"] = validation_code
         return df
 
         
