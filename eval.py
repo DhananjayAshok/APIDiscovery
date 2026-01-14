@@ -33,7 +33,7 @@ Based on this, suggest a short list of inputs to test the function with next.
 Provide each function calls arguments on a separate line. Each line should be valid Python tuples. 
 Format Example:
 - (arg0, arg1) # if the function takes exactly two arguments
-Now provide your suggested inputs below:
+Now provide your suggested inputs below and when you are done with the list, say [STOP]
 Suggested Inputs:
 
 """
@@ -51,6 +51,7 @@ Else, say NO and provide a revised hypothesis of what you think the function may
 Format Example:
 Hypothesis Conclusion: YES/NO |
 Summary: <your summary or revised hypothesis here>
+[STOP]
 
 Now, provide your conclusion below:
 Hypothesis Conclusion: 
@@ -96,7 +97,7 @@ if __name__ == "__main__":
     # Example usage
     func_code = """
 from typing import List    
-validate_input_args(arg0: List[float], arg1: float) -> None:
+def validate_input_args(arg0: List[float], arg1: float) -> None:
     if not isinstance(arg0, list):
         raise TypeError("arg0 must be a list")
     for item in arg0:
