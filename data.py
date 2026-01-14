@@ -11,8 +11,59 @@ TEST_DATASETS = ["cruxeval", "mbpp", "humaneval"]
 TRAIN_DATASETS = []
 
 
-class ReformatPrompts:
-    pass
+class Prompts:
+    validation_creator = """
+You are given a function definition with several arguments. Your task is to first, identify the types and other fundamental constraints of the input variables that are required for the function to run without errors. Then, create a validate_input_args function that checks these constraints and raises appropriate exceptions if any of them are violated.
+Function: 
+test_func(arg0: List[float], arg1: float) -> bool:
+    threshold = arg1
+    numbers = arg0
+
+
+    for idx, elem in enumerate(numbers):
+        for idx2, elem2 in enumerate(numbers):
+            if idx != idx2:
+                distance = abs(elem - elem2)
+                if distance < threshold:
+                    return True
+
+    return False
+
+Types and Constraints:
+- arg0: List of floats. Each element should be a float.
+- arg1: Float. Represents the threshold value.
+
+validate_input_args(arg0: List[float], arg1: float) -> None:
+    if not isinstance(arg0, list):
+        raise TypeError("arg0 must be a list")
+    for item in arg0:
+        if not isinstance(item, float):
+            raise TypeError("All elements in arg0 must be floats")
+    if not isinstance(arg1, float):
+        raise TypeError("arg1 must be a float")
+    return     
+[STOP]
+Function: 
+def test_func(arg0, arg1):
+    \"\"\"
+    Find the similar elements from the given two tuple lists.
+    \"\"\"
+    res = tuple(set(arg0) & set(arg1))
+    return (res)
+
+Types and Constraints:
+- arg0: Tuple of elements. Can contain any hashable type.
+- arg1: Tuple of elements. Can contain any hashable type.
+validate_input_args(arg0: tuple, arg1: tuple) -> None:
+    if not isinstance(arg0, tuple):
+        raise TypeError("arg0 must be a tuple")
+    if not isinstance(arg1, tuple):
+        raise TypeError("arg1 must be a tuple")
+    return     
+[STOP]
+Function: 
+
+"""
 
     
 def anonymize_header(func_code: str) -> str:
@@ -45,10 +96,16 @@ def anonymize_header(func_code: str) -> str:
         header = header.replace(f"({arg_name}:", f"(arg{i}:")        
         header = header.replace(f" {arg_name}):", f" arg{i}):")
         header = header.replace(f",{arg_name}):", f",arg{i}):")        
-        if i == 0:
-            body = body + "\n"
         body = f"    {arg_name} = arg{i}\n" + body
-    anonymized_code = preamble + header + body
+    # adding a validate function at the start of the body
+    validate_call = "    validate_input_args("
+    for i, arg_raw in enumerate(args_raw):
+        if i > 0:
+            validate_call += ", "
+        validate_call += f"arg{i}"
+    validate_call += ")\n"
+    body = validate_call + body
+    anonymized_code = preamble + header + "\n" + body
     return anonymized_code
 
 
@@ -85,8 +142,18 @@ class RawLoaders:
         dataset = load_dataset("cruxeval-org/cruxeval", split="test").to_pandas()
         # rename code column to test_func
         dataset = dataset.rename(columns={"code": "test_func"})
+        dataset["test_func_alone"] = dataset["test_func"].apply(anonymize_header)
         dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
         dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
+        def add_docstring(row):
+            func = row['test_func']
+            text = row['text'].split("function to ")[-1].strip()
+            # in cruxeval, function declaration is always first and there are no type hints
+            header, body = func.split("):", 1)
+            docstring = f'    """\n    {text}\n    """'
+            new_func = header + "):" + docstring + body
+            return new_func
+        dataset["validation_prompt"] = dataset.apply(add_docstring, axis=1).apply(lambda x: Prompts.validation_creator + x)
         return {"test": dataset}
     
     @staticmethod
@@ -123,9 +190,29 @@ def decode_shift(s: str):
 
         dataset['header_only'] = dataset['prompt'].apply(drop_docstrings)
         dataset['function_only'] = dataset['header_only'].apply(last_function) + dataset['canonical_solution']
-        dataset["test_func"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
-        return dataset
+        dataset["test_func_alone"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
+        dataset["validation_prompt"] = dataset["test_func"].apply(lambda x: Prompts.validation_creator + x)
+        return {"test": dataset}
 
+
+    def load_mbpp(parameters):
+        # Muennighoff/mbpp
+        dataset = load_dataset("Muennighoff/mbpp", "sanitized", split="test").to_pandas()
+        # functionaly the exact same as cruxeval
+        dataset = dataset.rename(columns={"code": "test_func"})
+        dataset["test_func_alone"] = dataset["test_func"].apply(anonymize_header)
+        dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
+        dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
+        def add_docstring(row):
+            func = row['test_func']
+            text = row['text'].split("function to ")[-1].strip()
+            # in cruxeval, function declaration is always first and there are no type hints
+            header, body = func.split("):", 1)
+            docstring = f'    """\n    {text}\n    """'
+            new_func = header + "):" + docstring + body
+            return new_func
+        dataset["validation_prompt"] = dataset.apply(add_docstring, axis=1).apply(lambda x: Prompts.validation_creator + x)
+        return {"test": dataset}
 
 
 
@@ -136,7 +223,13 @@ def decode_shift(s: str):
 def load_raw(parameters, dataset_name):
     if dataset_name == "humaneval":
         data_splits = RawLoaders.load_humaneval(parameters)
-        breakpoint()
+    elif dataset_name == "cruxeval":
+        data_splits = RawLoaders.load_cruxeval(parameters)
+    elif dataset_name == "mbpp":
+        data_splits = RawLoaders.load_mbpp(parameters)
+    else:
+        log_error(f"Dataset {dataset_name} not recognized.", parameters=parameters)
+    breakpoint()
 
 
 
