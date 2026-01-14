@@ -67,6 +67,32 @@ Now, generate the validate_input_args function for the following function only. 
 Function: 
 
 """
+    example_creator = """
+You are given a function definition. Your task is to create example inputs to the function that satisfy the constraints, and also trigger the different branches of the function logic. Output as many examples as you can, that test different parts of the function.     
+Output each example on a new line, in the format:
+ - (arg0, arg1, ..., argN)
+Function:
+def test_func(arg0):
+    \"\"\"
+    Identify non-prime numbers.
+    \"\"\"
+    result = False
+    for i in range(2,int(math.sqrt(n)) + 1):
+        if n % i == 0:
+            result = True
+    return result
+Examples:
+ - (2)
+ - (4)
+ - (15)
+ - (17)
+ - (9)
+ [STOP]
+
+Now do this for the following function only. After that, say [STOP]
+Function:
+
+"""
 
     
 def anonymize_header(func_code: str) -> str:
@@ -157,7 +183,9 @@ class RawLoaders:
             return func
         dataset["test_func_w_docstring"] = dataset.apply(get_docstring_func, axis=1)
         dataset["validation_prompt"] = dataset["test_func_w_docstring"].apply(lambda x: Prompts.validation_creator + x)
+        dataset["example_prompt"] = dataset["test_func_w_docstring"].apply(lambda x: Prompts.example_creator + x)
         dataset = RawLoaders.generate_validation(dataset)
+        dataset = RawLoaders.generate_examples(dataset)
         return {"test": dataset}
     
     @staticmethod
@@ -196,7 +224,9 @@ def decode_shift(s: str):
         dataset['function_only'] = dataset['header_only'].apply(last_function) + dataset['canonical_solution']
         dataset["test_func_alone"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
         dataset["validation_prompt"] = dataset["test_func_alone"].apply(lambda x: Prompts.validation_creator + x)
+        dataset["example_prompt"] = dataset["test_func_alone"].apply(lambda x: Prompts.example_creator + x)
         dataset = RawLoaders.generate_validation(dataset)
+        dataset = RawLoaders.generate_examples(dataset)
         return {"test": dataset}
 
     @staticmethod
@@ -242,8 +272,10 @@ def decode_shift(s: str):
             docstring = f'    """\n    {text}\n    """'
             new_func = header + "):" + docstring + body
             return new_func
-        dataset["validation_prompt"] = dataset.apply(add_docstring, axis=1).apply(lambda x: Prompts.validation_creator + x)
+        dataset["validation_prompt"] = dataset.apply(add_docstring, axis=1).apply(lambda x: Prompts.validation_creator + x)        
+        dataset["example_prompt"] = dataset["test_func_alone"].apply(lambda x: Prompts.example_creator + x)
         dataset = RawLoaders.generate_validation(dataset)
+        dataset = RawLoaders.generate_examples(dataset)
         return {"test": dataset}
     
     @staticmethod
@@ -258,6 +290,23 @@ def decode_shift(s: str):
             if "return" in validation_code:
                 validation_code = validation_code.split("return")[0] + "return"
             df.at[index, "validation_code"] = validation_code
+        return df
+    
+    @staticmethod
+    def generate_examples(df):
+        model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
+        for index, row in tqdm(df.iterrows(), total=len(df)):
+            prompt = row["example_prompt"]
+            example_code = model.generate(prompt, max_new_tokens=500)
+            df.at[index, "example_output"] = example_code
+            examples = []
+            for line in example_code.split("\n"):
+                line = line.strip()
+                if line.startswith("- "):
+                    line = line[2:].strip()
+                if line.startswith("(") and line.endswith(")"):                    
+                    examples.append("test_func"+line)
+            df.at[index, "examples"] = examples
         return df
 
         
