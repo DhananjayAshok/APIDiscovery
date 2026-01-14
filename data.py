@@ -145,15 +145,7 @@ class RawLoaders:
         dataset["test_func_alone"] = dataset["test_func"].apply(anonymize_header)
         #dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
         #dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
-        def add_docstring(row):
-            func = row['test_func']
-            text = row['text'].split("function to ")[-1].strip()
-            # in cruxeval, function declaration is always first and there are no type hints
-            header, body = func.split("):", 1)
-            docstring = f'    """\n    {text}\n    """'
-            new_func = header + "):" + docstring + body
-            return new_func
-        dataset["validation_prompt"] = dataset.apply(add_docstring, axis=1).apply(lambda x: Prompts.validation_creator + x)
+        dataset["validation_prompt"] = dataset["test_func_alone"].apply(lambda x: Prompts.validation_creator + x)
         return {"test": dataset}
     
     @staticmethod
@@ -201,8 +193,6 @@ def decode_shift(s: str):
         # functionaly the exact same as cruxeval
         dataset = dataset.rename(columns={"code": "test_func"})
         dataset["test_func_alone"] = dataset["test_func"].apply(anonymize_header)
-        dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
-        dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
         def add_docstring(row):
             func = row['test_func']
             text = row['text'].split("function to ")[-1].strip()
