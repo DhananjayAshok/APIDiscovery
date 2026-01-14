@@ -27,7 +27,7 @@ loaded_parameters = load_parameters()
 
 
 TEST_DATASETS = ["cruxeval", "mbpp", "humaneval"]
-TRAIN_DATASETS = []
+TRAIN_DATASETS = ["code_alpaca", "magic_coder"]
 
 
 class Prompts:
@@ -89,10 +89,15 @@ You are given a function definition. Your task is to create example inputs to th
 Output each example on a new line, in the format:
  - (arg0, arg1, ..., argN)
 Function:
+def validate_input_args(arg0):
+    if not isinstance(arg0, int):
+        raise TypeError("arg0 must be an integer")
+
 def test_func(arg0):
     \"\"\"
     Identify non-prime numbers.
     \"\"\"
+    validate_input_args(arg0)
     result = False
     for i in range(2,int(math.sqrt(n)) + 1):
         if n % i == 0:
@@ -106,7 +111,8 @@ Examples:
  - (9)
  [STOP]
 
-Now do this for the following function only. After that, say [STOP]
+Note, the type checks in validate_input_args are bindings. So you must always ensure that the inputs you are generating satisfy those type checks. For example, if validate_input_args checks that an argument is a float, you MUST give a float in your examples, not an int. 
+Now do this for the following function only. After that, say [STOP].
 Examples:
 """
     more_examples = """
@@ -115,6 +121,7 @@ Given the function:
 
 We can have the following example inputs:
 [EXAMPLES]
+Note, the type checks in validate_input_args are bindings. So you must always ensure that the inputs you are generating satisfy those type checks. For example, if validate_input_args checks that an argument is a float, you MUST give a float in your examples, not an int. 
 Create an exhaustive list of as many example inputs as you can make, which test various edge cases and functionality of the function. 
 Answer in the format: 
  - (arg0, arg1, ..., argN)
@@ -339,6 +346,61 @@ def decode_shift(s: str):
         return {"test": dataset}
     
     @staticmethod
+    def load_code_alpaca(parameters):
+        df = load_dataset("sahil2801/CodeAlpaca-20k", split="train").to_pandas()
+        df["test_function_anon"] = df["output"].apply(anonymize_header)
+        def insert_docstring(row):
+            func = row["test_function_anon"]
+            first_indented_line = func.index("    validate_input_args")
+            # insert a docstring before this
+            doc_text = row["instruction"]
+            func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+            return func
+        df["test_function_anon_w_docstring"] = df.apply(insert_docstring, axis=1)
+        df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x)
+        df["example_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
+        df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x)
+        df = RawLoaders.generate_validation(df)
+        df = RawLoaders.generate_examples(df)
+        df = RawLoaders.generate_more_examples(df)
+        df = RawLoaders.generate_description(df)
+        return {"train": df}
+    
+    @staticmethod
+    def load_magic_coder(parameters):
+        df = load_dataset("ise-uiuc/Magicoder-OSS-Instruct-75K", split="train").to_pandas()
+        df = df[df['lang'] == "python"].reset_index(drop=True)
+        def get_func(x):
+            if x.count("```python") != 1:
+                return None
+            pstart = x.index("```python") + len("```python")
+            x = x[pstart:]
+            if x.count("```") != 1:
+                return None
+            x = x.split("```")[0]
+            return x
+        df['func'] = df['output'].apply(get_func)
+        df["test_function_anon"] = df["func"].apply(anonymize_header)
+        def insert_docstring(row):
+            func = row["test_function_anon"]
+            first_indented_line = func.index("    validate_input_args")
+            # insert a docstring before this
+            doc_text = row["input"]
+            func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+            return func
+        df["test_function_anon_w_docstring"] = df.apply(insert_docstring, axis=1)
+        df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x)
+        df["example_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
+        df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x)
+        df = RawLoaders.generate_validation(df)
+        df = RawLoaders.generate_examples(df)
+        df = RawLoaders.generate_more_examples(df)
+        df = RawLoaders.generate_description(df)
+        return {"train": df}
+    
+    def load_
+    
+    @staticmethod
     def generate_validation(df):
         model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating validation code"):
@@ -448,7 +510,7 @@ class FilteredLoader:
         # dataset has columns: test_func_anon, examples, more_examples, description
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Filtering and annotating dataset"):
             test_func_code = row["test_func_anon"]
-            all_examples = row["examples"] + row["more_examples"]
+            all_examples = list(set(row["examples"] + row["more_examples"]))
             # shuffle all examples
             random.shuffle(all_examples)
             filtered_inputs, filtered_outputs, errored_inputs, errored_outputs = FilteredLoader.filter_examples(test_func_code, all_examples)
@@ -477,6 +539,10 @@ def process_raw(parameters, dataset_name):
         data_splits = RawLoaders.load_cruxeval(parameters)
     elif dataset_name == "mbpp":
         data_splits = RawLoaders.load_mbpp(parameters)
+    elif dataset_name == "code_alpaca":
+        data_splits = RawLoaders.load_code_alpaca(parameters)
+    elif dataset_name == "magic_coder":
+        data_splits = RawLoaders.load_magic_coder(parameters)
     else:
         log_error(f"Dataset {dataset_name} not recognized.", parameters=parameters)
     for data_split in data_splits:
@@ -484,6 +550,7 @@ def process_raw(parameters, dataset_name):
         csv_clean = csv[["test_func_anon", "description", "examples", "more_examples"]]
         csv_clean.to_json(f"{save_dir}/{data_split}_clean.jsonl", orient="records", lines=True)
         csv.to_json(f"{save_dir}/{data_split}_proc.jsonl", orient="records", lines=True)
+        log_info(f"Saved {dataset_name} split {data_split} to {save_dir}", parameters=parameters)
 
 
 @click.command()
@@ -506,6 +573,7 @@ def process_final(parameters, dataset_name):
         df_filtered = FilteredLoader.filter_annotate_dataset(df)
         df_filtered_clean = df_filtered[["test_func_anon", "description", "train_inputs", "train_outputs", "test_inputs", "test_outputs"]]
         df_filtered_clean.to_json(f"{save_dir}/{split_name}_final.jsonl", orient="records", lines=True)
+        log_info(f"Saved final filtered dataset for {dataset_name} split {split_name} to {save_dir}", parameters=parameters)
         dataset = Dataset.from_pandas(df_filtered_clean)
         dataset.push_to_hub(f"{huggingface_hub_repo_name}", organization=huggingface_hub_username, private=False, split=split_name, config=dataset_name)
         
@@ -524,30 +592,3 @@ main.add_command(process_final, name="process_final")
 
 if __name__ == "__main__":
     main()
-
-
-from typing import List
-
-def validate_input_args(arg0: List[float], arg1: float) -> None:
-    if not isinstance(arg0, list):
-        raise TypeError("arg0 must be a list")
-    for item in arg0:
-        if not isinstance(item, float):
-            raise TypeError("All elements in arg0 must be floats")
-    if not isinstance(arg1, float):
-        raise TypeError("arg1 must be a float")
-    return
-def test_func(arg0: List[float], arg1: float) -> bool:
-    validate_input_args(arg0, arg1)
-    threshold = arg1
-    numbers = arg0
-
-
-    for idx, elem in enumerate(numbers):
-        for idx2, elem2 in enumerate(numbers):
-            if idx != idx2:
-                distance = abs(elem - elem2)
-                if distance < threshold:
-                    return True
-
-    return False
