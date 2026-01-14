@@ -46,14 +46,14 @@ So far, you have tried the following inputs: [PREV]
 You then came up with the following running hypothesis: [HYPOTHESIS]
 Finally, you just tried the following inputs: [LAST_INPUTS]
 
-Based on this, can you conclude what the function does? If so, say YES and provide a concise description of its functionality.
+Based on this, can you conclude with very high confidence what the function does? If so, say YES and provide a concise description of its functionality.
 Else, say NO and provide a revised hypothesis of what you think the function may do, and some guidance on how to test this further.
 Format Example:
 Hypothesis Conclusion: YES/NO |
 Summary: <your summary or revised hypothesis here>
 [STOP]
 
-Now, provide your conclusion below:
+Now, provide your conclusion below, remember to say [STOP] after your summary.
 Hypothesis Conclusion: 
 """
     for i in tqdm(range(max_iterations), desc="Function Discovery"):
