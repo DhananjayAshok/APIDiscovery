@@ -154,6 +154,7 @@ class RawLoaders:
             # insert a docstring before this
             doc_text = "Example usage: \n" + ">>> test_func(" + row['input'] + ")\n" + ">>> " + row['output']
             func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+            return func
         dataset["test_func_w_docstring"] = dataset.apply(get_docstring_func, axis=1)
         dataset["validation_prompt"] = dataset["test_func_w_docstring"].apply(lambda x: Prompts.validation_creator + x)
         dataset = RawLoaders.generate_validation(dataset)
@@ -224,7 +225,10 @@ def decode_shift(s: str):
             paren_index = func.index("(", 4)
             func_name = func[4:paren_index].strip()
             test_list = row["test_list"]
-            test_list = test_list.replace(func_name, "test_func")
+            new_test_list = []
+            for item in test_list:
+                new_test_list.append(item.replace(func_name, "test_func"))
+            test_list = new_test_list
             return test_list
             # get the 
         dataset["test_list"] = dataset.apply(rewrite_test_list, axis=1)
@@ -232,7 +236,7 @@ def decode_shift(s: str):
             func = last_function(row['test_func_alone'])
             text = row['prompt'].split("function to ")[-1].strip()
             test_list = row['test_list']
-            text = text + "\nWill end up satisfying:\n" + test_list
+            text = text + "\nWill end up satisfying:\n" + "\n".join(test_list)
             # in cruxeval, function declaration is always first and there are no type hints
             header, body = func.split("):", 1)
             docstring = f'    """\n    {text}\n    """'
