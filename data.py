@@ -191,7 +191,7 @@ def decode_shift(s: str):
         dataset['header_only'] = dataset['prompt'].apply(drop_docstrings)
         dataset['function_only'] = dataset['header_only'].apply(last_function) + dataset['canonical_solution']
         dataset["test_func_alone"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
-        dataset["validation_prompt"] = dataset["test_func"].apply(lambda x: Prompts.validation_creator + x)
+        dataset["validation_prompt"] = dataset["test_func_alone"].apply(lambda x: Prompts.validation_creator + x)
         return {"test": dataset}
 
 
