@@ -348,6 +348,10 @@ def decode_shift(s: str):
     @staticmethod
     def load_code_alpaca(parameters):
         df = load_dataset("sahil2801/CodeAlpaca-20k", split="train").to_pandas()
+        df = df[df["output"].str.startswith("def ")].reset_index(drop=True)
+        df = df[df['output'].apply(lambda x: "end" not in x and "{" not in x and "}" not in x)].reset_index(drop=True)
+        # manually removing index 137
+        df = df.drop(index=137).reset_index(drop=True)    
         df["test_function_anon"] = df["output"].apply(anonymize_header)
         def insert_docstring(row):
             func = row["test_function_anon"]
@@ -398,7 +402,6 @@ def decode_shift(s: str):
         df = RawLoaders.generate_description(df)
         return {"train": df}
     
-    def load_
     
     @staticmethod
     def generate_validation(df):
