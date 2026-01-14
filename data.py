@@ -4,15 +4,23 @@
     - description: A brief description of what the function does
     - examples: A list of example inputs to the function
     - more_examples: A more exhaustive list of example inputs to the function
-2. Load the jsonl files and 
+2. Load the jsonl files and then filter the examples based on which ones do not trigger an error when provided into the test_func_anon. For each example, add the outputs too. Push the filtered datasets to Hugging Face Hub. Will have final columns:
+    - test_func_anon: The function code with anonymized function name and added validate_input_args call
+    - description: A brief description of what the function does
+    - train_inputs: A list of example inputs to the function. Can be used to guide the api discovery process. Is small (no more than 2 points). 
+    - train_outputs: A list of outputs from the function for the corresponding inputs. Is the same length as train_inputs.
+    - test_inputs: A list of example inputs to the function that did not error. No overlap with train_inputs.
+    - test_outputs: A list of outputs from the function for the corresponding inputs. Is the same length as test_inputs.
 """
 
 from utils.parameter_handling import load_parameters, compute_secondary_parameters
 from utils import log_error, log_info, log_warn
 from utils.lm_inference import HuggingFaceModel
 import click
-from datasets import load_dataset
+import random
+from datasets import load_dataset, Dataset
 from tqdm import tqdm
+import pandas as pd
 import os
 
 loaded_parameters = load_parameters()
@@ -394,13 +402,73 @@ def decode_shift(s: str):
             df.at[index, "description"] = description.replace("Description:", "").strip()
         return df
 
+class RunTestFunc:
+    def __init__(self, func_code: str):
+        self.func_code = func_code
+        self.exec_func() # defines the test_func in the local scope
+        self.test_func = locals()["test_func"]
+
+    def run_test(self, *args):
+        returns = None
+        try:
+            returns = self.test_func(*args)
+        except AssertionError as e:
+            return None, str(e)
+        except Exception as e:
+            return None, str(e)
+        return returns, None
+
+class FilteredLoader:
+    @staticmethod
+    def filter_examples(test_func_code: str, examples: list):
+        runner = RunTestFunc(test_func_code)
+        filtered_inputs = []
+        filtered_outputs = []
+        errored_inputs = []
+        errored_outputs = []
+        for example in examples:
+            try:
+                args = eval(example)
+                return_value, error = runner.run_test(*args)
+                if error is None:
+                    filtered_inputs.append(example)
+                    filtered_outputs.append(repr(return_value))
+                else:
+                    errored_inputs.append(example)
+                    errored_outputs.append(error)
+            except Exception as e:
+                errored_inputs.append(example)
+                errored_outputs.append(str(e))
+        return filtered_inputs, filtered_outputs, errored_inputs, errored_outputs
+
+
+    @staticmethod
+    def filter_annotate_dataset(df):
+        random.seed(42)
+        # dataset has columns: test_func_anon, examples, more_examples, description
+        for index, row in tqdm(df.iterrows(), total=len(df)):
+            test_func_code = row["test_func_anon"]
+            all_examples = row["examples"] + row["more_examples"]
+            # shuffle all examples
+            random.shuffle(all_examples)
+            filtered_inputs, filtered_outputs, errored_inputs, errored_outputs = FilteredLoader.filter_examples(test_func_code, all_examples)
+            # first 2 filtered inputs/outputs are train, rest are test
+            train_inputs = filtered_inputs[:2]
+            train_outputs = filtered_outputs[:2]
+            test_inputs = filtered_inputs[2:]
+            test_outputs = filtered_outputs[2:]
+            df.at[index, "train_inputs"] = train_inputs
+            df.at[index, "train_outputs"] = train_outputs
+            df.at[index, "test_inputs"] = test_inputs
+            df.at[index, "test_outputs"] = test_outputs
+        return df
 
 
 
 @click.command()
 @click.option("--dataset_name", required=True, help="The name of the dataset to load from the Hugging Face Hub.", type=click.Choice(TEST_DATASETS + TRAIN_DATASETS))
 @click.pass_obj
-def load_raw(parameters, dataset_name):
+def process_raw(parameters, dataset_name):
     save_dir = parameters["data_dir"] + f"raw/{dataset_name}/"
     os.makedirs(save_dir, exist_ok=True)
     if dataset_name == "humaneval":
@@ -414,9 +482,33 @@ def load_raw(parameters, dataset_name):
     for data_split in data_splits:
         csv = data_splits[data_split]
         csv_clean = csv[["test_func_anon", "description", "examples", "more_examples"]]
-        csv_clean.to_json(f"{save_dir}/{data_split}_clean.json", orient="records", lines=True)
-        csv.to_json(f"{save_dir}/{data_split}_proc.json", orient="records", lines=True)
+        csv_clean.to_json(f"{save_dir}/{data_split}_clean.jsonl", orient="records", lines=True)
+        csv.to_json(f"{save_dir}/{data_split}_proc.jsonl", orient="records", lines=True)
 
+
+@click.command()
+@click.option("--dataset_name", required=True, help="The name of the dataset to load from the Hugging Face Hub.", type=click.Choice(TEST_DATASETS + TRAIN_DATASETS))
+@click.pass_obj
+def process_final(parameters, dataset_name):
+    load_dir = parameters["data_dir"] + f"raw/{dataset_name}/"
+    save_dir = parameters["data_dir"] + f"final/{dataset_name}/"
+    huggingface_hub_username = parameters["huggingface_repo_namespace"]
+    huggingface_hub_repo_name = "APIDiscoveryDataset"
+    os.makedirs(save_dir, exist_ok=True)
+    files = os.listdir(load_dir)
+    split_dict = {}
+    for file in files:
+        if file.endswith("_clean.jsonl"):
+            split_name = file.replace("_clean.jsonl", "")
+            split_dict[split_name] = pd.read_json(f"{load_dir}/{file}", lines=True)
+    for split_name in split_dict:
+        df = split_dict[split_name]
+        df_filtered = FilteredLoader.filter_annotate_dataset(df)
+        df_filtered_clean = df_filtered[["test_func_anon", "description", "train_inputs", "train_outputs", "test_inputs", "test_outputs"]]
+        df_filtered_clean.to_json(f"{save_dir}/{split_name}_final.jsonl", orient="records", lines=True)
+        dataset = Dataset.from_pandas(df_filtered_clean)
+        dataset.push_to_hub(f"{huggingface_hub_repo_name}", organization=huggingface_hub_username, private=False, split=split_name, config=dataset_name)
+        
 
 
 
@@ -427,7 +519,7 @@ def main(ctx):
     ctx.obj = loaded_parameters
 
 
-main.add_command(load_raw, name="load_raw")
+main.add_command(process_raw, name="process_raw")
 
 if __name__ == "__main__":
     main()
