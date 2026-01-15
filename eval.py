@@ -2,10 +2,13 @@ from utils.lm_inference import HuggingFaceModel
 from utils import log_warn, log_info
 from data import RunTestFunc
 from tqdm import tqdm
+import pandas as pd
+import os
+from utils import load_parameters, log_info
+import click
 
 
-def discover_function(func_code: str, model_name="meta-llama/Meta-Llama-3-8B-Instruct", max_iterations=100):
-    model = HuggingFaceModel(model_name=model_name)
+def discover_function(func_code: str, model, max_iterations=100):
     runner = RunTestFunc(func_code)
     header_start = func_code.index("def test_func(")
     header_end = func_code.index("\n", header_start)
@@ -109,6 +112,7 @@ Explanation: The hypothesized description is
         """
         response = self.model.generate(prompt, max_new_tokens=50)
         response = response.strip()
+        print(response)
         if "rating:" in response.lower():
             response = response.lower().split("rating:",1)[1].strip().split()[0]
         else:
@@ -122,44 +126,40 @@ Explanation: The hypothesized description is
             log_warn("Could not parse rating from model response: " + response)
         return None
 
+def get_dataset(dataset_name):
+    pass
+
+def score_dataset(dataset_name, model_name):
+    dataset = get_dataset(dataset_name)
+    evaluator = Evaluator(model_name="meta-llama/Meta-Llama-3-8B-Instruct")
+    model = HuggingFaceModel(model_name=model_name)    
+    columns = ["test_func_validated", "true_description", "n_queries", "concluded", "predicted_description", "score"]
+    data = []
+    for i, row in tqdm(dataset.iterrows(), total=len(dataset), desc=f"Evaluating {dataset_name}"):
+        test_func_str = row["test_func_validated"]
+        true_description = row["description"]
+        predicted_description, n_queries, concluded = discover_function(test_func_str, model)
+        score = evaluator.evaluate(predicted_description, true_description)
+        data.append([test_func_str, true_description, n_queries, concluded, predicted_description, score])
+    df = pd.DataFrame(data=data, columns=columns)
+    parameters = load_parameters()
+    save_path = "results/"
+    os.makedirs(save_path, exist_ok=True)
+    model_save_name = model_name.split("/")[-1].strip()
+    df.to_csv(f"results/{dataset_name}_{model_save_name}.csv", index=False)
+    avg_n_queries = df["n_queries"].mean()
+    avg_score = df["score"].mean()
+    perc_concluded = df["concluded"].mean()
+    log_info(f"n_queries: {avg_n_queries}, concluded: {round(perc_concluded* 100, 2)}, score: {avg_score}")
+    log_info(df.groupby("concluded")["score"].mean())
+    log_info(df[["n_queries", "score"]].mean())    
+
     
+@click.command()
+@click.option("--dataset_name", type=str)
+@click.option("--model_name", type=str)
+def do(dataset_name, model_name):
+    score_dataset(dataset_name, model_name)
     
 if __name__ == "__main__":
-    # Example usage
-    evaluator = Evaluator(model_name="meta-llama/Meta-Llama-3-8B-Instruct")
-    func_code = """
-from typing import List    
-def validate_input_args(arg0: List[float], arg1: float) -> None:
-    if not isinstance(arg0, list):
-        raise TypeError("arg0 must be a list")
-    for item in arg0:
-        if not isinstance(item, float):
-            raise TypeError("All elements in arg0 must be floats")
-    if not isinstance(arg1, float):
-        raise TypeError("arg1 must be a float")
-    return
-
-
-def test_func(arg0: List[float], arg1: float) -> bool:
-    validate_input_args(arg0, arg1)
-    threshold = arg1
-    numbers = arg0
-
-
-    for idx, elem in enumerate(numbers):
-        for idx2, elem2 in enumerate(numbers):
-            if idx != idx2:
-                distance = abs(elem - elem2)
-                if distance < threshold:
-                    return True
-
-    return False
-"""
-    hypothesis, n_queries, concluded = discover_function(func_code, model_name="meta-llama/Meta-Llama-3-8B-Instruct", max_iterations=50)
-    log_info(f"Final Hypothesis: {hypothesis}")
-    log_info(f"Total Queries Used: {n_queries}")
-    log_info(f"Concluded: {concluded}")
-    true_description = "This function takes a list of floats and a float threshold, and returns True if any two distinct floats in the list have an absolute difference less than the threshold, otherwise returns False."
-    rating = evaluator.evaluate(hypothesis, true_description)
-    if rating is not None:
-        log_info(f"Hypothesis Accuracy Rating: {rating}/5")
+    do()
