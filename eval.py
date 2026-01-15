@@ -54,7 +54,7 @@ Summary: <your summary or revised hypothesis here>
 [STOP]
 
 Now, provide your conclusion below, remember to say [STOP] after your summary.
-Hypothesis Conclusion: 
+Hypothesis C
 """
     for i in tqdm(range(max_iterations), desc="Function Discovery"):
         prev_results_str = get_prev_results_str()
@@ -116,7 +116,6 @@ Now, provide your rating for the following description only:
 True Function Description: {true_description}
 Hypothesized Description: {hypothesis}
 Explanation:
-Rating:
         """
         response = self.model.generate(prompt, max_new_tokens=10)
         response = response.strip()
