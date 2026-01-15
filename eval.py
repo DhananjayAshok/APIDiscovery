@@ -29,12 +29,13 @@ Your task is to try various inputs to discover what this function does.
 So far, you have tried the following inputs: [PREV]
 You then came up with the following running hypothesis: [HYPOTHESIS]
 
-Based on this, suggest a short list of inputs to test the function with next.
-Provide each function calls arguments on a separate line. Each line should be valid Python tuples. 
+Based on this, suggest an input to test the function with next.
+The input should be valid Python tuples. 
 Format Example:
 - (arg0, arg1) # if the function takes exactly two arguments
-Now provide your suggested inputs below and when you are done with the list, say [STOP]
-Suggested Inputs:
+[STOP]
+Now provide your suggested inputs below and then say [STOP]
+Suggested Input:
 
 """
     reflection_prompt = f"""
