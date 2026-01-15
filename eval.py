@@ -91,10 +91,45 @@ Hypothesis Conclusion:
         else:
             pass
     return hypothesis, runner.access_counter, concluded
+
+class Evaluator:
+    def __init__(self, model_name):
+        self.model_name = model_name
+        self.model = HuggingFaceModel(model_name=model_name)
+
+    def evaluate(self, hypothesis: str, true_description: str) -> float:
+        prompt = f"""
+You are given a function description and a hypothesized description of what the function does.
+Your task is to rate how accurate the hypothesized description is compared to the true description on a scale from 1 to 5, where 1 means "completely inaccurate" and 5 means "completely accurate".
+Example:
+True Function Description: This function takes a list of integers and returns True if there are any two integers in the list that sum to zero, otherwise it returns False.
+Hypothesized Description: This function checks if there are two numbers in the list that add up to zero.
+Rate the accuracy (1-5): 5 [STOP]
+
+True Function Description: calulates the nth fibonacci number
+Hypothesized Description: This function computes the factorial of a number.
+Rate the accuracy (1-5): 1 [STOP]
+
+Now, provide your rating for the following description only:
+True Function Description: {true_description}
+Hypothesized Description: {hypothesis}
+Rate the accuracy (1-5):
+        """
+        response = self.model.generate(prompt, max_new_tokens=10, temperature=0.0)
+        response = response.strip().split()[0]
+        if response.isdigit():
+            rating = int(response)
+            if 1 <= rating <= 5:
+                return rating
+        else:
+            log_warn("Could not parse rating from model response: " + response)
+        return None
+
     
     
 if __name__ == "__main__":
     # Example usage
+    evaluator = Evaluator(model_name="meta-llama/Meta-Llama-3-8B-Instruct")
     func_code = """
 from typing import List    
 def validate_input_args(arg0: List[float], arg1: float) -> None:
@@ -127,3 +162,7 @@ def test_func(arg0: List[float], arg1: float) -> bool:
     log_info(f"Final Hypothesis: {hypothesis}")
     log_info(f"Total Queries Used: {n_queries}")
     log_info(f"Concluded: {concluded}")
+    true_description = "This function takes a list of floats and a float threshold, and returns True if any two distinct floats in the list have an absolute difference less than the threshold, otherwise returns False."
+    rating = evaluator.evaluate(hypothesis, true_description)
+    if rating is not None:
+        log_info(f"Hypothesis Accuracy Rating: {rating}/5")
