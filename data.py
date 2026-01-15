@@ -53,7 +53,7 @@ Types and Constraints:
 - arg0: List of floats. Each element should be a float.
 - arg1: Float. Represents the threshold value.
 
-validate_input_args(arg0: List[float], arg1: float) -> None:
+def validate_input_args(arg0: List[float], arg1: float) -> None:
     if not isinstance(arg0, list):
         raise TypeError("arg0 must be a list")
     for item in arg0:
@@ -74,7 +74,7 @@ def test_func(arg0, arg1):
 Types and Constraints:
 - arg0: Tuple of elements. Can contain any hashable type.
 - arg1: Tuple of elements. Can contain any hashable type.
-validate_input_args(arg0: tuple, arg1: tuple) -> None:
+def validate_input_args(arg0: tuple, arg1: tuple) -> None:
     if not isinstance(arg0, tuple):
         raise TypeError("arg0 must be a tuple")
     if not isinstance(arg1, tuple):
@@ -135,7 +135,7 @@ Examples:
 Given the function, briefly describe what the function does in a concise manner.
 Example:
 Function:
-test_func(arg0: List[float], arg1: float) -> bool:
+def test_func(arg0: List[float], arg1: float) -> bool:
     threshold = arg1
     numbers = arg0
     for idx, elem in enumerate(numbers):
@@ -426,9 +426,13 @@ def decode_shift(s: str):
             validation_code = model.generate(prompt, max_new_tokens=500)
             df.at[index, "validation_output"] = validation_code
             if "def validate_input_args(" in validation_code:
-                validation_code = validation_code.split("def validate_input_args(")[1]
-            if "return" in validation_code:
-                validation_code = validation_code.split("return")[0] + "return"
+                validation_code = validation_code.split("def validate_input_args(")[1] + "def validate_input_args("
+                if "return" in validation_code:
+                    validation_code = validation_code.split("return")[0] + "return"
+                else:
+                    validation_code = None
+            else:
+                validation_code = None            
             df.at[index, "validation_code"] = validation_code
             df.at[index, "test_func_validated"] = move_imports_top(validation_code + "\n" + row["test_func_anon"])
         return df
