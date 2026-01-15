@@ -31,12 +31,9 @@ You then came up with the following running hypothesis: [HYPOTHESIS]
 
 Based on this, suggest an input to test the function with next.
 The input should be valid Python tuples. 
-Format Example:
-- (arg0, arg1) # if the function takes exactly two arguments
-[STOP]
+Format Example: (arg0, arg1) [STOP]
 Now provide your suggested inputs below and then say [STOP]
-Suggested Input:
-
+Suggested Input: 
 """
     reflection_prompt = f"""
 You are given a Python function with the following header:
@@ -63,15 +60,7 @@ Hypothesis C
         response = model.generate(prompt, max_new_tokens=300, temperature=0.7)
         print(response)
         print("-----")
-        suggested_inputs = []
-        for line in response.split("\n"):
-            line = line.strip()
-            if line.startswith("- "):
-                line = line[2:].strip()
-                suggested_inputs.append(line)
-        if not suggested_inputs:
-            log_warn("No suggested inputs found, stopping discovery. Output text was: \n" + response)
-            break
+        suggested_inputs = [response.strip()]
         last_inputs = []
         for inp_str in suggested_inputs:
             ret, err = runner.run_test_str(inp_str)
@@ -110,13 +99,13 @@ Rating: 5 [STOP]
 
 True Function Description: calulates the nth fibonacci number
 Hypothesized Description: This function computes the factorial of a number.
-Explanation: The hypothesized description is incorrect as it describes a different mathematical operation.
+Explanation: The hypothesized description is incorrect as the fibonacci sequence and factorial are different mathematical concepts.
 Rating: 1 [STOP]
 
 Now, provide your rating for the following description only:
 True Function Description: {true_description}
 Hypothesized Description: {hypothesis}
-Explanation:
+Explanation: The hypothesized description is 
         """
         response = self.model.generate(prompt, max_new_tokens=50)
         response = response.strip()
