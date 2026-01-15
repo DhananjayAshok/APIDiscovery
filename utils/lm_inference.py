@@ -50,4 +50,4 @@ class HuggingFaceModel(ModelInterface):
                 new_texts.append(text.split("[STOP]")[0].strip())
             else:
                 new_texts.append(text.strip())
-        return " ".join(new_texts)
+        return new_texts
