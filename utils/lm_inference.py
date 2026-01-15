@@ -43,4 +43,11 @@ class HuggingFaceModel(ModelInterface):
             pad_token_id=self.tokenizer.eos_token_id
         )
         output_only_ids = output_ids[:, inputs["input_ids"].shape[-1]:]
-        return self.tokenizer.decode(output_only_ids[0], skip_special_tokens=True)
+        texts = self.tokenizer.decode(output_only_ids[0], skip_special_tokens=True)
+        new_texts = []
+        for text in texts:
+            if "[STOP]" in text:
+                new_texts.append(text.split("[STOP]")[0].strip())
+            else:
+                new_texts.append(text.strip())
+        return " ".join(new_texts)
