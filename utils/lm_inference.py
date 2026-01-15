@@ -44,6 +44,5 @@ class HuggingFaceModel(ModelInterface):
         )
         output_only_ids = output_ids[:, inputs["input_ids"].shape[-1]:]
         text = self.tokenizer.decode(output_only_ids[0], skip_special_tokens=True)
-        if "[STOP]" in text:
-            text = text.split("[STOP]")[0].strip()
+        text = text.replace("[STOP]", "").strip()
         return text

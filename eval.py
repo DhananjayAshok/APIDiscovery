@@ -104,19 +104,27 @@ Your task is to rate how accurate the hypothesized description is compared to th
 Example:
 True Function Description: This function takes a list of integers and returns True if there are any two integers in the list that sum to zero, otherwise it returns False.
 Hypothesized Description: This function checks if there are two numbers in the list that add up to zero.
-Rate the accuracy (1-5): 5 [STOP]
+Explanation: The hypothesized description accurately captures the functionality of the true description.
+Rating: 5 [STOP]
 
 True Function Description: calulates the nth fibonacci number
 Hypothesized Description: This function computes the factorial of a number.
-Rate the accuracy (1-5): 1 [STOP]
+Explanation: The hypothesized description is incorrect as it describes a different mathematical operation.
+Rating: 1 [STOP]
 
 Now, provide your rating for the following description only:
 True Function Description: {true_description}
 Hypothesized Description: {hypothesis}
-Rate the accuracy (1-5):
+Explanation:
+Rating:
         """
-        response = self.model.generate(prompt, max_new_tokens=10, temperature=0.0)
-        response = response.strip().split()[0]
+        response = self.model.generate(prompt, max_new_tokens=10)
+        response = response.strip()
+        if "rating:" in response.lower():
+            response = response.lower().split("rating:",1)[1].strip().split()[0]
+        else:
+            log_warn("Could not find 'Rating:' in model response: " + response)
+            return None
         if response.isdigit():
             rating = int(response)
             if 1 <= rating <= 5:
