@@ -425,7 +425,7 @@ def decode_shift(s: str):
             validation_code = model.generate(prompt, max_new_tokens=500)
             df.at[index, "validation_output"] = validation_code
             if "def validate_input_args(" in validation_code:
-                validation_code = validation_code.split("def validate_input_args(")[1] + "def validate_input_args("
+                validation_code =  "def validate_input_args(" + validation_code.split("def validate_input_args(")[1]
                 if "return" in validation_code:
                     validation_code = validation_code.split("return")[0] + "return"
                 else:
