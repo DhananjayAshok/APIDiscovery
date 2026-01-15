@@ -149,6 +149,7 @@ test_func(arg0: List[float], arg1: float) -> bool:
 Description:
 Checks if there are any two distinct elements in the input list 'arg0' whose absolute difference is less than the specified 'arg1' threshold. It returns True if such a pair exists, otherwise it returns False.
 [STOP]
+Note, there is no need to describe the validate_input_args function if it exists, only test_func
 Now, describe the following function only and then say [STOP]
 Function:
 
@@ -257,7 +258,7 @@ class RawLoaders:
         dataset["test_func_anon_w_docstring"] = dataset.apply(get_docstring_func, axis=1)
         dataset["validation_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x)
         dataset["example_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
-        dataset["description_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: ")
+        dataset["describe_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function ")
         dataset = RawLoaders.generate_validation(dataset)
         dataset = RawLoaders.generate_examples(dataset)
         dataset = RawLoaders.generate_more_examples(dataset)
@@ -301,7 +302,7 @@ def decode_shift(s: str):
         dataset["test_func_anon"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
         dataset["validation_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.validation_creator + x)
         dataset["example_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.example_creator + x)
-        dataset["describe_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.describe + x + "\nDescription: ")
+        dataset["describe_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.describe + x + "\nDescription: This function ")
         dataset = RawLoaders.generate_validation(dataset)
         dataset = RawLoaders.generate_examples(dataset)
         dataset = RawLoaders.generate_more_examples(dataset)    
