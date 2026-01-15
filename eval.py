@@ -117,7 +117,7 @@ True Function Description: {true_description}
 Hypothesized Description: {hypothesis}
 Explanation:
         """
-        response = self.model.generate(prompt, max_new_tokens=10)
+        response = self.model.generate(prompt, max_new_tokens=50)
         response = response.strip()
         if "rating:" in response.lower():
             response = response.lower().split("rating:",1)[1].strip().split()[0]
