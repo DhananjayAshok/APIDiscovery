@@ -162,6 +162,14 @@ def anonymize_header(func_code: str) -> str:
     preamble = anonymized_name[:header_start + 4]
     header = anonymized_name[header_start+4:def_end + 1]
     body = anonymized_name[def_end + 1:]
+    indent = None
+    for line in body.split("\n"):
+        stripped_line = line.lstrip()
+        if stripped_line != "":
+            indent = line[:len(line) - len(stripped_line)]
+            break
+    if indent == "  ": # then convert to 4 spaces
+        body = body.replace("  ", "    ")
     for i, arg_raw in enumerate(args_raw):
         if ":" in arg_raw:
             arg_raw = arg_raw.split(":")[0]
@@ -188,9 +196,6 @@ def anonymize_header(func_code: str) -> str:
             validate_call += ", "
         validate_call += f"arg{i}"
     validate_call += ")\n"
-    # if body does not start with an indent, add one
-    if not body.startswith("    "):
-        body = "    " + body
     body = validate_call + body
     anonymized_code = preamble + header + "\n" + body
     return anonymized_code
