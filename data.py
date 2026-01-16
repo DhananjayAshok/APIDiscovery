@@ -181,16 +181,18 @@ def anonymize_header(func_code: str) -> str:
         header = header.replace(f",{arg_name}):", f",arg{i}):")        
         body = f"    {arg_name} = arg{i}\n" + body
     # adding a validate function at the start of the body
+    # should be able to exec anonymized code without the validate_input_args call now, do it and if it fails I need to debug:    
     validate_call = "    validate_input_args("
     for i, arg_raw in enumerate(args_raw):
         if i > 0:
             validate_call += ", "
         validate_call += f"arg{i}"
     validate_call += ")\n"
+    # if body does not start with an indent, add one
+    if not body.startswith("    "):
+        body = "    " + body
     body = validate_call + body
     anonymized_code = preamble + header + "\n" + body
-    # should be able to exec anonymized_code now, do it and if it fails I need to debug:
-    exec(anonymized_code)
     return anonymized_code
 
 
