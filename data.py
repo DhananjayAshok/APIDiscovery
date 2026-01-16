@@ -189,6 +189,8 @@ def anonymize_header(func_code: str) -> str:
     validate_call += ")\n"
     body = validate_call + body
     anonymized_code = preamble + header + "\n" + body
+    # should be able to exec anonymized_code now, do it and if it fails I need to debug:
+    exec(anonymized_code)
     return anonymized_code
 
 
