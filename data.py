@@ -260,7 +260,7 @@ class RawLoaders:
         dataset["test_func_anon_w_docstring"] = dataset.apply(get_docstring_func, axis=1)
         dataset["validation_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
         dataset["example_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
-        dataset["describe_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function ")
+        dataset["describe_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
         dataset = RawLoaders.generate_validation(dataset)
         dataset = RawLoaders.generate_examples(dataset)
         dataset = RawLoaders.generate_more_examples(dataset)
@@ -304,7 +304,7 @@ def decode_shift(s: str):
         dataset["test_func_anon"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
         dataset["validation_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
         dataset["example_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.example_creator + x)
-        dataset["describe_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.describe + x + "\nDescription: This function ")
+        dataset["describe_prompt"] = dataset["prompt"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in takes in ")
         dataset = RawLoaders.generate_validation(dataset)
         dataset = RawLoaders.generate_examples(dataset)
         dataset = RawLoaders.generate_more_examples(dataset)    
@@ -380,7 +380,7 @@ def decode_shift(s: str):
         df["test_function_anon_w_docstring"] = df.apply(insert_docstring, axis=1)
         df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
         df["example_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
-        df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function ")
+        df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
         df = RawLoaders.generate_validation(df)
         df = RawLoaders.generate_examples(df)
         df = RawLoaders.generate_more_examples(df)
@@ -412,7 +412,7 @@ def decode_shift(s: str):
         df["test_function_anon_w_docstring"] = df.apply(insert_docstring, axis=1)
         df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
         df["example_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
-        df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function ")
+        df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
         df = RawLoaders.generate_validation(df)
         df = RawLoaders.generate_examples(df)
         df = RawLoaders.generate_more_examples(df)
@@ -504,7 +504,12 @@ def decode_shift(s: str):
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating descriptions"):
             prompt = row["describe_prompt"]
             description = model.generate(prompt, max_new_tokens=200)
-            df.at[index, "description"] = description.replace("Description:", "").strip()
+            if description.strip() == "":
+                prompt = prompt = " (continue the description and explain what the function does)\n continuation: this function takes in "
+            if description.strip() == "":
+                log_warn(f"Could not generate description for index {index}", parameters=loaded_parameters)
+                description = None
+            df.at[index, "description"] = description
         return df
 
 class RunTestFunc:
