@@ -48,11 +48,7 @@ test_func(arg0: List[float], arg1: float) -> bool:
                     return True
 
     return False
-
-Types and Constraints:
-- arg0: List of floats. Each element should be a float.
-- arg1: Float. Represents the threshold value.
-
+Validation Function: 
 def validate_input_args(arg0: List[float], arg1: float) -> None:
     if not isinstance(arg0, list):
         raise TypeError("arg0 must be a list")
@@ -70,10 +66,7 @@ def test_func(arg0, arg1):
     \"\"\"
     res = tuple(set(arg0) & set(arg1))
     return (res)
-
-Types and Constraints:
-- arg0: Tuple of elements. Can contain any hashable type.
-- arg1: Tuple of elements. Can contain any hashable type.
+Validation Function:
 def validate_input_args(arg0: tuple, arg1: tuple) -> None:
     if not isinstance(arg0, tuple):
         raise TypeError("arg0 must be a tuple")
@@ -81,7 +74,7 @@ def validate_input_args(arg0: tuple, arg1: tuple) -> None:
         raise TypeError("arg1 must be a tuple")
     return     
 [STOP]
-Now, generate the types and constraints and then the validate_input_args function for the following function only. After that, say [STOP]
+Now, generate the validate_input_args function for the following function only. After that, say [STOP]
 Function: 
 
 """
@@ -256,7 +249,7 @@ class RawLoaders:
             func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
             return func
         dataset["test_func_anon_w_docstring"] = dataset.apply(get_docstring_func, axis=1)
-        dataset["validation_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nTypes and Constraints:\n - arg0: ")
+        dataset["validation_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
         dataset["example_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
         dataset["describe_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function ")
         dataset = RawLoaders.generate_validation(dataset)
@@ -300,7 +293,7 @@ def decode_shift(s: str):
         dataset['header_only'] = dataset['prompt'].apply(drop_docstrings)
         dataset['function_only'] = dataset['header_only'].apply(last_function) + dataset['canonical_solution']
         dataset["test_func_anon"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
-        dataset["validation_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.validation_creator + x + "\nTypes and Constraints:\n - arg0: ")
+        dataset["validation_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
         dataset["example_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.example_creator + x)
         dataset["describe_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.describe + x + "\nDescription: This function ")
         dataset = RawLoaders.generate_validation(dataset)
@@ -352,7 +345,7 @@ def decode_shift(s: str):
             docstring = f'    """\n    {text}\n    """'
             new_func = header + "):" + docstring + body
             return new_func
-        dataset["validation_prompt"] = dataset.apply(add_docstring, axis=1).apply(lambda x: Prompts.validation_creator + x + "\nTypes and Constraints:\n - arg0: ")        
+        dataset["validation_prompt"] = dataset.apply(add_docstring, axis=1).apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")        
         dataset["example_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.example_creator + x)
         dataset["description"] = dataset["prompt"].apply(lambda x: x.split("function to ")[-1].strip())
         dataset = RawLoaders.generate_validation(dataset)
@@ -376,7 +369,7 @@ def decode_shift(s: str):
             func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
             return func
         df["test_function_anon_w_docstring"] = df.apply(insert_docstring, axis=1)
-        df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nTypes and Constraints:\n - arg0: ")
+        df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
         df["example_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
         df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function ")
         df = RawLoaders.generate_validation(df)
@@ -408,7 +401,7 @@ def decode_shift(s: str):
             func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
             return func
         df["test_function_anon_w_docstring"] = df.apply(insert_docstring, axis=1)
-        df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nTypes and Constraints:\n - arg0: ")
+        df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
         df["example_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
         df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function ")
         df = RawLoaders.generate_validation(df)
