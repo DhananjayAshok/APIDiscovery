@@ -418,7 +418,7 @@ def decode_shift(s: str):
             validation_output = model.generate(prompt, max_new_tokens=500)
             df.at[index, "validation_output"] = validation_output
             if "def validate_input_args(" in validation_output:
-                validation_code =  "def validate_input_args(" + validation_code.split("def validate_input_args(")[1]
+                validation_code =  "def validate_input_args(" + validation_output.split("def validate_input_args(")[1]
                 if "return" in validation_code:
                     validation_code = validation_code.split("return")[0] + "return"
                 else:
@@ -430,7 +430,7 @@ def decode_shift(s: str):
                 validation_output = model.generate(new_prompt, max_new_tokens=800)
                 df.at[index, "validation_output"] = validation_output
                 if "def validate_input_args(" in validation_output:
-                    validation_code =  "def validate_input_args(" + validation_code.split("def validate_input_args(")[1]
+                    validation_code =  "def validate_input_args(" + validation_output.split("def validate_input_args(")[1]
                     if "return" in validation_code:
                         validation_code = validation_code.split("return")[0] + "return"
                     else:
@@ -440,8 +440,6 @@ def decode_shift(s: str):
                         validation_code = None
                 else:
                     log_warn(validation_output)
-                    log_warn("Became")
-                    log_warn(validation_code)                        
                     validation_code = None      
             df.at[index, "validation_code"] = validation_code
             df.at[index, "test_func_validated"] = move_imports_top(validation_code + "\n" + row["test_func_anon"])
