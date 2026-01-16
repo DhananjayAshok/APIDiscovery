@@ -441,6 +441,9 @@ def decode_shift(s: str):
                 else:
                     log_warn(validation_output)
                     validation_code = None      
+            if validation_code is None:
+                log_warn(f"Could not generate validation code for index {index}\n" + validation_output, parameters=loaded_parameters)
+                continue
             df.at[index, "validation_code"] = validation_code
             df.at[index, "test_func_validated"] = move_imports_top(validation_code + "\n" + row["test_func_anon"])
         return df
