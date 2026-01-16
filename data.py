@@ -415,16 +415,34 @@ def decode_shift(s: str):
         model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating validation code"):
             prompt = row["validation_prompt"]
-            validation_code = model.generate(prompt, max_new_tokens=500)
-            df.at[index, "validation_output"] = validation_code
-            if "def validate_input_args(" in validation_code:
+            validation_output = model.generate(prompt, max_new_tokens=500)
+            df.at[index, "validation_output"] = validation_output
+            if "def validate_input_args(" in validation_output:
                 validation_code =  "def validate_input_args(" + validation_code.split("def validate_input_args(")[1]
                 if "return" in validation_code:
                     validation_code = validation_code.split("return")[0] + "return"
                 else:
                     validation_code = None
             else:
-                validation_code = None            
+                validation_code = None      
+            if validation_code is None:
+                new_prompt = prompt + "Do not give an incomplete function or incorrect format response. Example: \n" + validation_output + "\n The above response is WRONG because it does not contain the full validation function implementation from start to finish. Write the validation function now, start with the def and ending with the return. Validation Function:\n"
+                validation_output = model.generate(new_prompt, max_new_tokens=800)
+                df.at[index, "validation_output"] = validation_output
+                if "def validate_input_args(" in validation_output:
+                    validation_code =  "def validate_input_args(" + validation_code.split("def validate_input_args(")[1]
+                    if "return" in validation_code:
+                        validation_code = validation_code.split("return")[0] + "return"
+                    else:
+                        log_warn(validation_output)
+                        log_warn("Became")
+                        log_warn(validation_code)                        
+                        validation_code = None
+                else:
+                    log_warn(validation_output)
+                    log_warn("Became")
+                    log_warn(validation_code)                        
+                    validation_code = None      
             df.at[index, "validation_code"] = validation_code
             df.at[index, "test_func_validated"] = move_imports_top(validation_code + "\n" + row["test_func_anon"])
         return df
