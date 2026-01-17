@@ -74,7 +74,7 @@ def validate_input_args(arg0: tuple, arg1: tuple) -> None:
         raise TypeError("arg1 must be a tuple")
     return     
 [STOP]
-Now, generate the validate_input_args function for the following function only. After that, say [STOP]
+Now, generate the validate_input_args function for the following function only, from the def validate_input_args portion to the return line. After that, say [STOP]
 Function: 
 
 """
@@ -93,10 +93,12 @@ def test_func(arg0):
     \"\"\"
     validate_input_args(arg0)
     result = False
-    for i in range(2,int(math.sqrt(n)) + 1):
-        if n % i == 0:
+    for i in range(2,int(math.sqrt(arg0)) + 1):
+        if arg0 % i == 0:
             result = True
     return result
+Thinking: I will create examples that test both prime and non-prime numbers
+
 Examples:
  - (2)
  - (4)
@@ -107,7 +109,7 @@ Examples:
 
 Note, the type checks in validate_input_args are bindings. So you must always ensure that the inputs you are generating satisfy those type checks. For example, if validate_input_args checks that an argument is a float, you MUST give a float in your examples, not an int. 
 Now do this for the following function only. After that, say [STOP].
-Examples:
+Thinking: I will create examples 
 """
     more_examples = """
 Given the function:
@@ -115,6 +117,8 @@ Given the function:
 
 We can have the following example inputs:
 [EXAMPLES]
+
+Generate more examples to test the function further.
 Note, the type checks in validate_input_args are bindings. So you must always ensure that the inputs you are generating satisfy those type checks. For example, if validate_input_args checks that an argument is a float, you MUST give a float in your examples, not an int. 
 Create an exhaustive list of as many example inputs as you can make, which test various edge cases and functionality of the function. 
 Answer in the format: 
@@ -129,6 +133,7 @@ Given the function, briefly describe what the function does in a concise manner.
 Example:
 Function:
 def test_func(arg0: List[float], arg1: float) -> bool:
+    validate_input_args(arg0, arg1)
     threshold = arg1
     numbers = arg0
     for idx, elem in enumerate(numbers):
@@ -142,7 +147,7 @@ def test_func(arg0: List[float], arg1: float) -> bool:
 Description:
 Checks if there are any two distinct elements in the input list 'arg0' whose absolute difference is less than the specified 'arg1' threshold. It returns True if such a pair exists, otherwise it returns False.
 [STOP]
-Note, there is no need to describe the validate_input_args function if it exists, only test_func
+Note, avoid any mention the usage of the validate_input_args method even if it exists, focus only test_func functionallity
 Now, describe the following function only and then say [STOP]
 Function:
 
@@ -250,21 +255,24 @@ class RawLoaders:
         dataset["test_func_anon"] = dataset["test_func"].apply(anonymize_header)
         #dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
         #dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
-        def get_docstring_func(row):
-            func = row["test_func_anon"]
+        def get_docstring_func(row, func_column="test_func_anon"):
+            func = row[func_column]
+            if func is None:
+                return None
             first_indented_line = func.index("    validate_input_args")
             # insert a docstring before this
             doc_text = "Example usage: \n" + ">>> test_func(" + row['input'] + ")\n" + ">>> " + row['output']
             func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
             return func
-        dataset["test_func_anon_w_docstring"] = dataset.apply(get_docstring_func, axis=1)
+        dataset["test_func_anon_w_docstring"] = dataset.apply(lambda x: get_docstring_func(x, "test_func_anon"), axis=1)
         dataset["validation_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
-        dataset["example_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
         dataset["describe_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
         dataset = RawLoaders.generate_validation(dataset)
+        dataset = RawLoaders.generate_description(dataset)
+        dataset["test_func_validated_w_docstring"] = dataset.apply(lambda x: get_docstring_func(x, "test_func_validated"), axis=1)        
+        dataset["example_prompt"] = dataset["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
         dataset = RawLoaders.generate_examples(dataset)
         dataset = RawLoaders.generate_more_examples(dataset)
-        dataset = RawLoaders.generate_description(dataset)
         return {"test": dataset}
     
     @staticmethod
@@ -303,12 +311,12 @@ def decode_shift(s: str):
         dataset['function_only'] = dataset['header_only'].apply(last_function) + dataset['canonical_solution']
         dataset["test_func_anon"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
         dataset["validation_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
-        dataset["example_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.example_creator + x)
         dataset["describe_prompt"] = dataset["prompt"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in takes in ")
+        dataset = RawLoaders.generate_description(dataset)
         dataset = RawLoaders.generate_validation(dataset)
+        dataset["example_prompt"] = dataset["test_func_validated"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
         dataset = RawLoaders.generate_examples(dataset)
         dataset = RawLoaders.generate_more_examples(dataset)    
-        dataset = RawLoaders.generate_description(dataset)    
         return {"test": dataset}
 
     @staticmethod
@@ -344,8 +352,10 @@ def decode_shift(s: str):
             return test_list
             # get the 
         dataset["test_list"] = dataset.apply(rewrite_test_list, axis=1)
-        def add_docstring(row):
-            func = last_function(row['test_func_anon'])
+        def add_docstring(row, func_column="test_func_anon"):
+            if row[func_column] is None:
+                return None
+            func = last_function(row[func_column])
             text = row['prompt'].split("function to ")[-1].strip()
             test_list = row['test_list']
             text = text + "\nWill end up satisfying:\n" + "\n".join(test_list)
@@ -354,10 +364,10 @@ def decode_shift(s: str):
             docstring = f'    """\n    {text}\n    """'
             new_func = header + "):" + docstring + body
             return new_func
-        dataset["validation_prompt"] = dataset.apply(add_docstring, axis=1).apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")        
-        dataset["example_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.example_creator + x)
+        dataset["validation_prompt"] = dataset.apply(lambda x: add_docstring(x, "test_func_anon"), axis=1).apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")        
         dataset["description"] = dataset["prompt"].apply(lambda x: x.split("function to ")[-1].strip())
         dataset = RawLoaders.generate_validation(dataset)
+        dataset["example_prompt"] = dataset.apply(lambda x: add_docstring(x, "test_func_validated"), axis=1).apply(lambda x: Prompts.example_creator + x if x is not None else None)
         dataset = RawLoaders.generate_examples(dataset)
         dataset = RawLoaders.generate_more_examples(dataset)
         return {"test": dataset}
@@ -370,8 +380,10 @@ def decode_shift(s: str):
         # manually removing index 129 which has a weird function
         df = df.drop(index=129).reset_index(drop=True)    
         df["test_func_anon"] = df["output"].apply(anonymize_header)
-        def insert_docstring(row):
-            func = row["test_func_anon"]
+        def insert_docstring(row, func_column="test_func_anon"):
+            func = row[func_column]
+            if func is None:
+                return None
             first_indented_line = func.index("    validate_input_args")
             # insert a docstring before this
             doc_text = row["instruction"]
@@ -379,12 +391,16 @@ def decode_shift(s: str):
             return func
         df["test_function_anon_w_docstring"] = df.apply(insert_docstring, axis=1)
         df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
-        df["example_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
         df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
         df = RawLoaders.generate_validation(df)
+        df = RawLoaders.generate_description(df)
+        df["test_func_validated_w_docstring"] = df.apply(lambda x: insert_docstring(x, "test_func_validated"), axis=1)
+        df["example_prompt"] = df["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
+
+
         df = RawLoaders.generate_examples(df)
         df = RawLoaders.generate_more_examples(df)
-        df = RawLoaders.generate_description(df)
+
         return {"train": df}
     
     @staticmethod
@@ -402,8 +418,10 @@ def decode_shift(s: str):
             return x
         df['func'] = df['solution'].apply(get_func)
         df["test_func_anon"] = df["func"].apply(anonymize_header)
-        def insert_docstring(row):
-            func = row["test_func_anon"]
+        def insert_docstring(row, func_column="test_func_anon"):
+            func = row[func_column]
+            if func is None:
+                return None
             first_indented_line = func.index("    validate_input_args")
             # insert a docstring before this
             doc_text = row["problem"]
@@ -411,17 +429,23 @@ def decode_shift(s: str):
             return func
         df["test_function_anon_w_docstring"] = df.apply(insert_docstring, axis=1)
         df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
-        df["example_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.example_creator + x)
+
         df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
         df = RawLoaders.generate_validation(df)
+        df = RawLoaders.generate_description(df)
+        df["test_func_validated_w_docstring"] = df.apply(lambda x: insert_docstring(x, "test_func_validated"), axis=1)
+        df["example_prompt"] = df["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
+
+
         df = RawLoaders.generate_examples(df)
         df = RawLoaders.generate_more_examples(df)
-        df = RawLoaders.generate_description(df)
         return {"train": df}
         
     @staticmethod
     def generate_validation(df):
         model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
+        df["validation_code"] = None
+        df["test_func_validated"] = None
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating validation code"):
             prompt = row["validation_prompt"]
             validation_output = model.generate(prompt, max_new_tokens=500)
@@ -455,14 +479,18 @@ def decode_shift(s: str):
                 continue
             df.at[index, "validation_code"] = validation_code
             df.at[index, "test_func_validated"] = move_imports_top(validation_code + "\n" + row["test_func_anon"])
-        return df
-    
+        return df       
+
     @staticmethod
     def generate_examples(df):
         model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
         df["examples"] = None
+        df["more_examples_prompt"] = None
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating example inputs"):
             prompt = row["example_prompt"]
+            if prompt is None:
+                df.at[index, "examples"] = None
+                continue
             example_code = model.generate(prompt, max_new_tokens=500)
             df.at[index, "example_output"] = example_code
             examples = []
@@ -471,7 +499,7 @@ def decode_shift(s: str):
                 if line.startswith("- "):
                     line = line[2:].strip()
                 if line.startswith("(") and line.endswith(")"):                    
-                    examples.append("test_func"+line)
+                    examples.append(line)
             df.at[index, "examples"] = examples
             function_str = prompt.split("Function: ")[-1].strip()
             more_examples_prompt = Prompts.more_examples.replace("[FUNC]", function_str)
@@ -485,6 +513,9 @@ def decode_shift(s: str):
         df["more_examples"] = None
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating more example inputs"):
             prompt = row["more_examples_prompt"]
+            if prompt is None:
+                df.at[index, "more_examples"] = None
+                continue
             example_code = model.generate(prompt, max_new_tokens=500)
             df.at[index, "more_examples_output"] = example_code
             examples = []
@@ -493,7 +524,7 @@ def decode_shift(s: str):
                 if line.startswith("- "):
                     line = line[2:].strip()
                 if line.startswith("(") and line.endswith(")"):                    
-                    examples.append("test_func"+line)
+                    examples.append(line)
             df.at[index, "more_examples"] = examples
         return df
 
@@ -524,8 +555,8 @@ class RunTestFunc:
         :type func_code: str
         """
         self.func_code = func_code
-        exec(func_code)
-        self.test_func = locals()["test_func"]
+        exec(func_code, globals())
+        self.test_func = globals()["test_func"]
         self.access_counter = 0
 
     def run_test(self, *args):
@@ -573,8 +604,16 @@ class FilteredLoader:
         errored_outputs = []
         for example in examples:
             try:
-                args = eval(example)
-                return_value, error = runner.run_test(*args)
+                if "test_func(" not in example:
+                    errored_inputs.append(example)
+                    errored_outputs.append("Example does not start with test_func(")
+                    continue
+                if not example.strip().endswith(")"):
+                    errored_inputs.append(example)
+                    errored_outputs.append("Example does not end with )")
+                    continue
+                example_str = example.split("test_func(")[1].strip()[:-1] # remove test_func( and trailing )
+                return_value, error = runner.run_test_str(example_str)
                 if error is None:
                     filtered_inputs.append(example)
                     filtered_outputs.append(repr(return_value))
@@ -634,7 +673,7 @@ def process_raw(parameters, dataset_name):
         csv_clean = csv[["test_func_validated", "description", "examples", "more_examples"]]
         csv_clean.to_json(f"{save_dir}/{data_split}_clean.jsonl", orient="records", lines=True)
         csv.to_json(f"{save_dir}/{data_split}_proc.jsonl", orient="records", lines=True)
-        log_info(f"Saved {dataset_name} split {data_split} to {save_dir}", parameters=parameters)
+        log_info(f"Saved {dataset_name} split {data_split} to {save_dir}/{data_split}_clean.jsonl", parameters=parameters)
 
 
 @click.command()
