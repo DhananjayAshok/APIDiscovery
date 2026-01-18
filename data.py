@@ -711,9 +711,11 @@ def process_final(parameters, dataset_name):
     for split_name in split_dict:
         df = split_dict[split_name]
         df_filtered = FilteredLoader.filter_annotate_dataset(df)
-        df_filtered_clean = df_filtered[["test_func_validated", "description", "train_inputs", "train_outputs", "test_inputs", "test_outputs"]]
+        df_filtered = df_filtered[["test_func_validated", "description", "train_inputs", "train_outputs", "test_inputs", "test_outputs"]]
+        df_filtered_clean = df_filtered[(df_filtered['train_inputs'].apply(len) >= 2) & (df_filtered['test_inputs'].apply(len) >= 1)].reset_index(drop=True) # Get those where some inputs are present for both train and test.
         df_filtered_clean.to_json(f"{save_dir}/{split_name}_final.jsonl", orient="records", lines=True)
-        log_info(f"Saved final filtered dataset for {dataset_name} split {split_name} to {save_dir}/{split_name}_final.jsonl", parameters=parameters)
+        df_filtered.to_json(f"{save_dir}/{split_name}_filtered.jsonl", orient="records", lines=True)
+        log_info(f"Saved final filtered dataset with {len(df_filtered_clean)} rows for {dataset_name} split {split_name} to {save_dir}/{split_name}_final.jsonl", parameters=parameters)
         dataset = Dataset.from_pandas(df_filtered_clean)
         dataset.push_to_hub(f"{huggingface_hub_repo_name}", private=False, split=split_name, config=dataset_name)
         
