@@ -478,7 +478,12 @@ def decode_shift(s: str):
                 log_warn(f"Could not generate validation code for index {index}\n" + validation_output, parameters=loaded_parameters)
                 continue
             df.at[index, "validation_code"] = validation_code
-            df.at[index, "test_func_validated"] = move_imports_top(validation_code + "\n" + row["test_func_anon"])
+            test_func_str = move_imports_top(validation_code + "\n" + row["test_func_anon"]) # Should be able to exec this now
+            try:
+                exec(test_func_str)
+                df.at[index, "test_func_validated"] = test_func_str
+            except Exception as e:
+                log_warn(f"Could not exec validated function for index {index}: {str(e)}", parameters=loaded_parameters)
         return df       
 
     @staticmethod
@@ -597,7 +602,10 @@ class RunTestFunc:
 class FilteredLoader:
     @staticmethod
     def filter_examples(test_func_code: str, examples: list):
-        runner = RunTestFunc(test_func_code)
+        try:
+            runner = RunTestFunc(test_func_code)
+        except Exception as e:
+            return False, [], [], [], []
         filtered_inputs = []
         filtered_outputs = []
         errored_inputs = []
@@ -623,19 +631,24 @@ class FilteredLoader:
             except Exception as e:
                 errored_inputs.append(example)
                 errored_outputs.append(str(e))
-        return filtered_inputs, filtered_outputs, errored_inputs, errored_outputs
+        return True, filtered_inputs, filtered_outputs, errored_inputs, errored_outputs
 
 
     @staticmethod
     def filter_annotate_dataset(df):
         random.seed(42)
         # dataset has columns: test_func_validated, examples, more_examples, description
+        df["train_inputs"] = None
+        df["train_outputs"] = None
+        df["test_inputs"] = None
+        df["test_outputs"] = None
+        df["execable"] = None
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Filtering and annotating dataset"):
             test_func_code = row["test_func_validated"]
             all_examples = list(set(row["examples"] + row["more_examples"]))
             # shuffle all examples
             random.shuffle(all_examples)
-            filtered_inputs, filtered_outputs, errored_inputs, errored_outputs = FilteredLoader.filter_examples(test_func_code, all_examples)
+            execable, filtered_inputs, filtered_outputs, errored_inputs, errored_outputs = FilteredLoader.filter_examples(test_func_code, all_examples)
             # first 2 filtered inputs/outputs are train, rest are test
             train_inputs = filtered_inputs[:2]
             train_outputs = filtered_outputs[:2]
@@ -645,6 +658,12 @@ class FilteredLoader:
             df.at[index, "train_outputs"] = train_outputs
             df.at[index, "test_inputs"] = test_inputs
             df.at[index, "test_outputs"] = test_outputs
+            df.at[index, "execable"] = execable
+        # take out not execable rows
+        original_length = len(df)
+        df = df[df["execable"] == True].reset_index(drop=True)
+        cleaned_length = len(df)
+        log_info(f"Filtered dataset: removed {original_length - cleaned_length} rows with non-execable test functions", parameters=loaded_parameters)
         return df
 
 
@@ -671,6 +690,11 @@ def process_raw(parameters, dataset_name):
     for data_split in data_splits:
         csv = data_splits[data_split]
         csv_clean = csv[["test_func_validated", "description", "examples", "more_examples"]]
+        # remove rows where test_func_validated is None or description is None or an empty string
+        original_length = len(csv_clean)
+        csv_clean = csv_clean[csv_clean["test_func_validated"].notnull() & csv_clean["description"].notnull() & (csv_clean["description"].str.strip() != "")]
+        cleaned_length = len(csv_clean)
+        log_info(f"Cleaned dataset {dataset_name} split {data_split}: removed {original_length - cleaned_length} rows with invalid test_func_validated or description", parameters=parameters)
         csv_clean.to_json(f"{save_dir}/{data_split}_clean.jsonl", orient="records", lines=True)
         csv.to_json(f"{save_dir}/{data_split}_proc.jsonl", orient="records", lines=True)
         log_info(f"Saved {dataset_name} split {data_split} to {save_dir}/{data_split}_clean.jsonl", parameters=parameters)
@@ -698,9 +722,9 @@ def process_final(parameters, dataset_name):
         df_filtered = FilteredLoader.filter_annotate_dataset(df)
         df_filtered_clean = df_filtered[["test_func_validated", "description", "train_inputs", "train_outputs", "test_inputs", "test_outputs"]]
         df_filtered_clean.to_json(f"{save_dir}/{split_name}_final.jsonl", orient="records", lines=True)
-        log_info(f"Saved final filtered dataset for {dataset_name} split {split_name} to {save_dir}", parameters=parameters)
+        log_info(f"Saved final filtered dataset for {dataset_name} split {split_name} to {save_dir}/{split_name}_final.jsonl", parameters=parameters)
         dataset = Dataset.from_pandas(df_filtered_clean)
-        dataset.push_to_hub(f"{huggingface_hub_repo_name}", organization=huggingface_hub_username, private=False, split=split_name, config=dataset_name)
+        dataset.push_to_hub(f"{huggingface_hub_repo_name}", private=False, split=split_name, config=dataset_name)
         
 
 
