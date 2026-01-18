@@ -612,16 +612,7 @@ class FilteredLoader:
         errored_outputs = []
         for example in examples:
             try:
-                if "test_func(" not in example:
-                    errored_inputs.append(example)
-                    errored_outputs.append("Example does not start with test_func(")
-                    continue
-                if not example.strip().endswith(")"):
-                    errored_inputs.append(example)
-                    errored_outputs.append("Example does not end with )")
-                    continue
-                example_str = example.split("test_func(")[1].strip()[:-1] # remove test_func( and trailing )
-                return_value, error = runner.run_test_str(example_str)
+                return_value, error = runner.run_test_str(example)
                 if error is None:
                     filtered_inputs.append(example)
                     filtered_outputs.append(repr(return_value))
@@ -663,7 +654,7 @@ class FilteredLoader:
         original_length = len(df)
         df = df[df["execable"] == True].reset_index(drop=True)
         cleaned_length = len(df)
-        log_info(f"Filtered dataset: removed {original_length - cleaned_length} rows with non-execable test functions", parameters=loaded_parameters)
+        log_info(f"Filtered dataset: removed {original_length - cleaned_length}/{original_length} rows with non-execable test functions", parameters=loaded_parameters)
         return df
 
 
@@ -694,7 +685,7 @@ def process_raw(parameters, dataset_name):
         original_length = len(csv_clean)
         csv_clean = csv_clean[csv_clean["test_func_validated"].notnull() & csv_clean["description"].notnull() & (csv_clean["description"].str.strip() != "")]
         cleaned_length = len(csv_clean)
-        log_info(f"Cleaned dataset {dataset_name} split {data_split}: removed {original_length - cleaned_length} rows with invalid test_func_validated or description", parameters=parameters)
+        log_info(f"Cleaned dataset {dataset_name} split {data_split}: removed {original_length - cleaned_length}/{original_length} rows with invalid test_func_validated or description", parameters=parameters)
         csv_clean.to_json(f"{save_dir}/{data_split}_clean.jsonl", orient="records", lines=True)
         csv.to_json(f"{save_dir}/{data_split}_proc.jsonl", orient="records", lines=True)
         log_info(f"Saved {dataset_name} split {data_split} to {save_dir}/{data_split}_clean.jsonl", parameters=parameters)
