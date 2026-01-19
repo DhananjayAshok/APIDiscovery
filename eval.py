@@ -6,14 +6,22 @@ import pandas as pd
 import os
 from utils import load_parameters, log_info
 import click
+from datasets import load_dataset
 
 
-def discover_function(func_code: str, model, max_iterations=100):
+def discover_function(func_code: str, examples: tuple, model, max_iterations=100):
     runner = RunTestFunc(func_code)
     header_start = func_code.index("def test_func(")
     header_end = func_code.index("\n", header_start)
     func_header = func_code[header_start:header_end]
+
     prev_results = []
+    example_inputs = examples[0]
+    example_outputs = examples[1]    
+    for i, example_input in enumerate(example_inputs):
+        input_str = example_input
+        output, err = example_outputs[i], None
+        prev_results.append((input_str, output, err))
     concluded = False
     def get_prev_results_str():
         if not prev_results:
@@ -61,8 +69,8 @@ Hypothesis C
         prev_results_str = get_prev_results_str()
         prompt = input_prompt.replace("[PREV]", prev_results_str).replace("[HYPOTHESIS]", hypothesis)
         response = model.generate(prompt, max_new_tokens=300, temperature=0.7)
-        print(response)
-        print("-----")
+        #print(response)
+        #print("-----")
         suggested_inputs = [response.strip()]
         last_inputs = []
         for inp_str in suggested_inputs:
@@ -72,8 +80,8 @@ Hypothesis C
         last_input_str = "\n".join(suggested_inputs)
         reflection = reflection_prompt.replace("[PREV]", prev_results_str).replace("[HYPOTHESIS]", hypothesis).replace("[LAST_INPUTS]", last_input_str)
         reflection_response = model.generate(reflection, max_new_tokens=300, temperature=0.7)
-        print(reflection_response)
-        print("=====")
+        #print(reflection_response)
+        #print("=====")
         if "summary:" in reflection_response.lower():
             hypothesis = reflection_response.lower().split("summary:",1)[1].strip()
         else:
@@ -112,7 +120,7 @@ Explanation: The hypothesized description is
         """
         response = self.model.generate(prompt, max_new_tokens=50)
         response = response.strip()
-        print(response)
+        #print(response)
         if "rating:" in response.lower():
             response = response.lower().split("rating:",1)[1].strip().split()[0]
         else:
@@ -126,8 +134,11 @@ Explanation: The hypothesized description is
             log_warn("Could not parse rating from model response: " + response)
         return None
 
-def get_dataset(dataset_name):
-    pass
+def get_dataset(dataset_name, parameters=None):
+    parameters = load_parameters()
+    username = parameters["huggingface_repo_namespace"]
+    dset = load_dataset(f"{username}/APIDiscoveryDataset", dataset_name, split="test").to_pandas()
+    return dset
 
 def score_dataset(dataset_name, model_name):
     dataset = get_dataset(dataset_name)
@@ -138,7 +149,8 @@ def score_dataset(dataset_name, model_name):
     for i, row in tqdm(dataset.iterrows(), total=len(dataset), desc=f"Evaluating {dataset_name}"):
         test_func_str = row["test_func_validated"]
         true_description = row["description"]
-        predicted_description, n_queries, concluded = discover_function(test_func_str, model)
+        examples = (row["train_inputs"], row["train_outputs"])
+        predicted_description, n_queries, concluded = discover_function(test_func_str, examples, model)
         score = evaluator.evaluate(predicted_description, true_description)
         data.append([test_func_str, true_description, n_queries, concluded, predicted_description, score])
     df = pd.DataFrame(data=data, columns=columns)
@@ -156,8 +168,8 @@ def score_dataset(dataset_name, model_name):
 
     
 @click.command()
-@click.option("--dataset_name", type=str)
-@click.option("--model_name", type=str)
+@click.option("--dataset_name", type=str, required=True)
+@click.option("--model_name", type=str, default="meta-llama/Meta-Llama-3-8B-Instruct")
 def do(dataset_name, model_name):
     score_dataset(dataset_name, model_name)
     
