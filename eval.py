@@ -65,7 +65,7 @@ Summary: <your summary or revised hypothesis here>
 Now, provide your conclusion below, remember to say [STOP] after your summary.
 Hypothesis C
 """
-    for i in tqdm(range(max_iterations), desc="Function Discovery"):
+    for i in tqdm(range(max_iterations), desc="Function Discovery", leave=False):
         prev_results_str = get_prev_results_str()
         prompt = input_prompt.replace("[PREV]", prev_results_str).replace("[HYPOTHESIS]", hypothesis)
         response = model.generate(prompt, max_new_tokens=300, temperature=0.7)
@@ -113,14 +113,13 @@ Hypothesized Description: This function computes the factorial of a number.
 Explanation: The hypothesized description is incorrect as the fibonacci sequence and factorial are different mathematical concepts.
 Rating: 1 [STOP]
 
-Now, provide your rating for the following description only:
+Now, provide your rating for the following description only. You absolutely must follow the format shown in the examples above and no matter what, you must provide a rating between 1 and 5.
 True Function Description: {true_description}
 Hypothesized Description: {hypothesis}
-Explanation: The hypothesized description is 
-        """
+Explanation: The hypothesized description is
+"""
         response = self.model.generate(prompt, max_new_tokens=50)
         response = response.strip()
-        #print(response)
         if "rating:" in response.lower():
             response = response.lower().split("rating:",1)[1].strip().split()[0]
         else:
@@ -131,6 +130,7 @@ Explanation: The hypothesized description is
             if 1 <= rating <= 5:
                 return rating
         else:
+            breakpoint()
             log_warn("Could not parse rating from model response: " + response)
         return None
 

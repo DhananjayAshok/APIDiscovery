@@ -735,7 +735,7 @@ def process_final(parameters, dataset_name):
         df_filtered.to_json(f"{save_dir}/{split_name}_filtered.jsonl", orient="records", lines=True)
         log_info(f"Saved final filtered dataset with {len(df_filtered_clean)} rows for {dataset_name} split {split_name} to {save_dir}/{split_name}_final.jsonl", parameters=parameters)
         dataset = Dataset.from_pandas(df_filtered_clean)
-        dataset.push_to_hub(f"{huggingface_hub_repo_name}", private=False, split=split_name, config_name=dataset_name)
+        dataset.push_to_hub(f"{huggingface_hub_username}/{huggingface_hub_repo_name}", private=False, split=split_name, config_name=dataset_name)
         
 
 

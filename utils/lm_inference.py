@@ -16,7 +16,7 @@ class OpenAIModel(ModelInterface):
         self.model_name = model_name
         self.client = OpenAI()
 
-    def generate(self, prompt: str, max_new_tokens: int = 50, temperature: float = 1.0) -> str:
+    def generate(self, prompt: str, max_new_tokens: int = 50, temperature: float = None) -> str:
         response = self.client.responses.create(
             model=self.model_name,
             input=prompt,
@@ -32,7 +32,7 @@ class HuggingFaceModel(ModelInterface):
         self.model = AutoModelForCausalLM.from_pretrained(model_name, device_map="auto")
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
-    def generate(self, prompt: str, max_new_tokens: int = 50, temperature: float = 1.0) -> str:        
+    def generate(self, prompt: str, max_new_tokens: int = 50, temperature: float = None) -> str:        
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         output_ids = self.model.generate(
             **inputs,
@@ -40,6 +40,7 @@ class HuggingFaceModel(ModelInterface):
             stop_strings=["[STOP]"],
             max_new_tokens=max_new_tokens,
             temperature=temperature,
+            do_sample=temperature is not None and temperature > 0,
             pad_token_id=self.tokenizer.eos_token_id
         )
         output_only_ids = output_ids[:, inputs["input_ids"].shape[-1]:]
