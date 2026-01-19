@@ -116,9 +116,9 @@ Rating: 1 [STOP]
 Now, provide your rating for the following description only. You absolutely must follow the format shown in the examples above and no matter what, you must provide a rating between 1 and 5.
 True Function Description: {true_description}
 Hypothesized Description: {hypothesis}
-Explanation: The hypothesized description is
+Explanation (very short): The hypothesized description is
 """
-        response = self.model.generate(prompt.strip(), max_new_tokens=50)
+        response = self.model.generate(prompt.strip(), max_new_tokens=150)
         response = response.strip().lower()
         if response.count("rating:") == 1:
             response = response.split("rating:")[1].strip()
@@ -141,7 +141,7 @@ def get_dataset(dataset_name, parameters=None):
 
 def score_dataset(dataset_name, model_name):
     dataset = get_dataset(dataset_name)
-    evaluator = Evaluator(model_name="meta-llama/Meta-Llama-3-8B-Instruct")
+    evaluator = Evaluator(model_name="Qwen/Qwen3-32B")
     model = HuggingFaceModel(model_name=model_name)    
     columns = ["test_func_validated", "true_description", "n_queries", "concluded", "predicted_description", "score"]
     data = []
