@@ -118,19 +118,18 @@ True Function Description: {true_description}
 Hypothesized Description: {hypothesis}
 Explanation: The hypothesized description is
 """
-        response = self.model.generate(prompt, max_new_tokens=50)
-        response = response.strip()
-        if "rating:" in response.lower():
-            response = response.lower().split("rating:",1)[1].strip().split()[0]
+        response = self.model.generate(prompt.strip(), max_new_tokens=50)
+        response = response.strip().lower()
+        if response.count("rating:") == 1:
+            response = response.split("rating:")[1].strip()
         else:
-            log_warn("Could not find 'Rating:' in model response: " + response)
+            log_warn("Could not find 'Rating:' (or found multiple) in model response: " + response)
             return None
         if response.isdigit():
             rating = int(response)
             if 1 <= rating <= 5:
                 return rating
         else:
-            breakpoint()
             log_warn("Could not parse rating from model response: " + response)
         return None
 
