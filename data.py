@@ -17,6 +17,7 @@ from utils.parameter_handling import load_parameters, compute_secondary_paramete
 from utils import log_error, log_info, log_warn
 from utils.lm_inference import HuggingFaceModel
 import click
+import multiprocessing
 import random
 from datasets import load_dataset, Dataset
 from tqdm import tqdm
@@ -552,35 +553,52 @@ class RunTestFunc:
     """
     A class to run a test function defined in code.
     """
-    def __init__(self, func_code: str):
+    def __init__(self, func_code: str, timeout=0.5):
         """
         Initializes the RunTestFunc with the given function code. Is not safe (i.e. runs exec on func_code, unsure you do not run malicious code through here by mistake).
 
         :param func_code: The code defining the test function. Should come from the provided dataset. 
         :type func_code: str
+        :param timeout: The maximum time in seconds to allow the function to run.
+        :type timeout: float
         """
         self.func_code = func_code
         exec(func_code, globals())
         self.test_func = globals()["test_func"]
         self.access_counter = 0
+        self.timeout = timeout
+
+    @staticmethod
+    def worker(func, args, queue):
+        """Helper worker to run the function and put the result in a queue."""
+        try:
+            result = func(*args)
+            queue.put((result, None))
+        except Exception as e:
+            queue.put((None, str(e)))
 
     def run_test(self, *args):
-        """
-        Runs the test function with the given arguments.
-        
-        :param args: Arguments to pass to the test function.
-        :return: A tuple (return_value, error_message). If there is no error, error_message is None.
-        :rtype: tuple
-        """
-        returns = None
         self.access_counter += 1
-        try:
-            returns = self.test_func(*args)
-        except AssertionError as e:
-            return None, str(e)
-        except Exception as e:
-            return None, str(e)
-        return returns, None
+        
+        # Use a Queue to get the return value back from the child process
+        queue = multiprocessing.Queue()
+        p = multiprocessing.Process(target=self.worker, args=(self.test_func, args, queue))
+        
+        p.start()
+        
+        # Wait
+        p.join(timeout=self.timeout)
+        
+        if p.is_alive():
+            # If the process is still running after 15s, kill it
+            p.terminate()
+            p.join()
+            return None, f"Timeout: Function execution exceeded {self.timeout} seconds"
+        
+        # If it finished, grab the result from the queue
+        if not queue.empty():
+            return queue.get()
+        return None, "Unknown error during execution"
     
     def run_test_str(self, args_str: str):
         """
