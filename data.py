@@ -23,6 +23,8 @@ from datasets import load_dataset, Dataset
 from tqdm import tqdm
 import pandas as pd
 import os
+import subprocess
+import sys
 from ast import literal_eval
 
 loaded_parameters = load_parameters()
@@ -75,14 +77,22 @@ def validate_input_args(arg0: tuple, arg1: tuple) -> None:
         raise TypeError("arg1 must be a tuple")
     return     
 [STOP]
-Now, generate the validate_input_args function for the following function only, from the def validate_input_args portion to the return line. After that, say [STOP]
+Now, generate the validate_input_args function for the following function only, from the def validate_input_args portion to the return line. Make sure to include type annotations on the function definition. After that, say [STOP]
 Function: 
 
 """
     example_creator = """
-You are given a function definition. Your task is to create example inputs to the function that satisfy the constraints, and also trigger the different branches of the function logic. Output as many examples as you can, that test different parts of the function.     
+You are given a function definition. Your task is to create as many example inputs as you can to the function that satisfy the constraints, and also trigger the different branches of the function logic. Output as many examples as you can, that test different parts of the function.     
 Output each example on a new line, in the format:
+Reasoning: An extremely brief reasoning for the kind of behavior these examples will trigger
  - (arg0, arg1, ..., argN)
+ - (arg0, arg1, ..., argN)
+Reasoning: brief reasoning for kind of behavior
+ - (arg0, arg1, ..., argN)
+ - (arg0, arg1, ..., argN)
+ - (arg0, arg1, ..., argN)
+ - (arg0, arg1, ..., argN) 
+[STOP]
 Function:
 def validate_input_args(arg0):
     if not isinstance(arg0, int):
@@ -98,37 +108,23 @@ def test_func(arg0):
         if arg0 % i == 0:
             result = True
     return result
-Thinking: I will create examples that test both prime and non-prime numbers
 
-Examples:
+Reasoning: Since the function tests prime numbers, and takes arguments a single integer, we first test with small prime numbers
  - (2)
- - (4)
- - (15)
+ - (3)
  - (17)
- - (9)
+ - (19)
+Reasoning: We can also test with small non-prime numbers
+ - (4)
+ - (6)
+ - (21)
  [STOP]
 
 Note, the type checks in validate_input_args are bindings. So you must always ensure that the inputs you are generating satisfy those type checks. For example, if validate_input_args checks that an argument is a float, you MUST give a float in your examples, not an int. 
 Now do this for the following function only. After that, say [STOP].
-Thinking: I will create examples 
+Function: 
 """
-    more_examples = """
-Given the function:
-[FUNC]
 
-We can have the following example inputs:
-[EXAMPLES]
-
-Generate more examples to test the function further.
-Note, the type checks in validate_input_args are bindings. So you must always ensure that the inputs you are generating satisfy those type checks. For example, if validate_input_args checks that an argument is a float, you MUST give a float in your examples, not an int. 
-Create an exhaustive list of as many example inputs as you can make, which test various edge cases and functionality of the function. 
-Answer in the format: 
- - (arg0, arg1, ..., argN)
-
- When you have finished the list, say [STOP]
-
-Examples:
-"""
     describe = """
 Given the function, briefly describe what the function does in a concise manner.
 Example:
@@ -267,13 +263,7 @@ class RawLoaders:
             return func
         dataset["test_func_anon_w_docstring"] = dataset.apply(lambda x: get_docstring_func(x, "test_func_anon"), axis=1)
         dataset["validation_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
-        dataset["describe_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
-        dataset = RawLoaders.generate_validation(dataset)
-        dataset = RawLoaders.generate_description(dataset)
-        dataset["test_func_validated_w_docstring"] = dataset.apply(lambda x: get_docstring_func(x, "test_func_validated"), axis=1)        
-        dataset["example_prompt"] = dataset["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
-        dataset = RawLoaders.generate_examples(dataset)
-        dataset = RawLoaders.generate_more_examples(dataset)
+        dataset["description_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
         return {"test": dataset}
     
     @staticmethod
@@ -312,12 +302,7 @@ def decode_shift(s: str):
         dataset['function_only'] = dataset['header_only'].apply(last_function) + dataset['canonical_solution']
         dataset["test_func_anon"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
         dataset["validation_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
-        dataset["describe_prompt"] = dataset["prompt"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in takes in ")
-        dataset = RawLoaders.generate_description(dataset)
-        dataset = RawLoaders.generate_validation(dataset)
-        dataset["example_prompt"] = dataset["test_func_validated"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
-        dataset = RawLoaders.generate_examples(dataset)
-        dataset = RawLoaders.generate_more_examples(dataset)    
+        dataset["description_prompt"] = dataset["prompt"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in takes in ")
         return {"test": dataset}
 
     @staticmethod
@@ -366,11 +351,7 @@ def decode_shift(s: str):
             new_func = header + "):" + docstring + body
             return new_func
         dataset["validation_prompt"] = dataset.apply(lambda x: add_docstring(x, "test_func_anon"), axis=1).apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")        
-        dataset["description"] = dataset["prompt"].apply(lambda x: x.split("function to ")[-1].strip())
-        dataset = RawLoaders.generate_validation(dataset)
-        dataset["example_prompt"] = dataset.apply(lambda x: add_docstring(x, "test_func_validated"), axis=1).apply(lambda x: Prompts.example_creator + x if x is not None else None)
-        dataset = RawLoaders.generate_examples(dataset)
-        dataset = RawLoaders.generate_more_examples(dataset)
+        dataset["description_output"] = dataset["prompt"].apply(lambda x: x.split("function to ")[-1].strip())
         return {"test": dataset}
     
     @staticmethod
@@ -392,16 +373,7 @@ def decode_shift(s: str):
             return func
         df["test_function_anon_w_docstring"] = df.apply(insert_docstring, axis=1)
         df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
-        df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
-        df = RawLoaders.generate_validation(df)
-        df = RawLoaders.generate_description(df)
-        df["test_func_validated_w_docstring"] = df.apply(lambda x: insert_docstring(x, "test_func_validated"), axis=1)
-        df["example_prompt"] = df["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
-
-
-        df = RawLoaders.generate_examples(df)
-        df = RawLoaders.generate_more_examples(df)
-
+        df["description_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
         return {"train": df}
     
     @staticmethod
@@ -432,25 +404,57 @@ def decode_shift(s: str):
         df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
 
         df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
-        df = RawLoaders.generate_validation(df)
-        df = RawLoaders.generate_description(df)
-        df["test_func_validated_w_docstring"] = df.apply(lambda x: insert_docstring(x, "test_func_validated"), axis=1)
-        df["example_prompt"] = df["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
-
-
-        df = RawLoaders.generate_examples(df)
-        df = RawLoaders.generate_more_examples(df)
         return {"train": df}
         
+    
     @staticmethod
-    def generate_validation(df):
-        model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
-        df["validation_code"] = None
+    def call_infer(run_name, dataset_name, split, input_file, output_file, input_column, output_column, max_new_tokens, parameters):
+        model = parameters["benchmark_creation_model"]
+        open_ai_batch_name = ""
+        if "gpt" in model:
+            open_ai_batch_name = f"{model}-{run_name}-{dataset_name}-{split}"
+        openaibatch_str = "-n " + open_ai_batch_name if open_ai_batch_name != "" else ""
+        command_string = f"bash scripts/infer.sh -i {input_file} -o {output_file} -m {model} -c {input_column} -d {output_column} -t {max_new_tokens} {openaibatch_str}"
+        log_info(f"Generating validation code with command: {command_string}")
+        subprocess.run(command_string, shell=True, check=True)
+        try:
+            df = pd.read_json(output_file, lines=True)
+            if "inference_completed" in df.columns:
+                df.drop("inference_completed", axis=1, inplace=True)
+            df.drop("inference_completed", axis=1, inplace=True)
+            if "output_logits" in df.columns:
+                df.drop("output_logits", axis=1, inplace=True)
+            df.to_json(output_file, orient="records", lines=True)
+        except FileNotFoundError:
+            log_warn(f"Output file {output_file} not found after inference command.", parameters=parameters)
+        return df
+    
+    @staticmethod
+    def generate_validation_code(dataset_name, split, parameters):
+        input_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc.jsonl"
+        output_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_validation_output.jsonl"        
+        input_column = "validation_prompt"
+        output_column = "validation_output"
+        max_new_tokens = 300
+        RawLoaders.call_infer(run_name="validation-code", dataset_name=dataset_name, split=split, input_file=input_file, output_file=output_file, input_column=input_column, output_column=output_column, max_new_tokens=max_new_tokens, parameters=parameters)
+
+
+    @staticmethod
+    def generate_description(dataset_name, split, parameters):
+        input_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_validation_output.jsonl"
+        output_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_description_output.jsonl"        
+        input_column = "description_prompt"
+        output_column = "description"
+        max_new_tokens = 600
+        RawLoaders.call_infer(run_name="description", dataset_name=dataset_name, split=split, input_file=input_file, output_file=output_file, input_column=input_column, output_column=output_column, max_new_tokens=max_new_tokens, parameters=parameters)                
+
+
+class MidLoader:
+    @staticmethod
+    def parse_validation(df):
         df["test_func_validated"] = None
-        for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating validation code"):
-            prompt = row["validation_prompt"]
-            validation_output = model.generate(prompt, max_new_tokens=500)
-            df.at[index, "validation_output"] = validation_output
+        for index, row in tqdm(df.iterrows(), total=len(df), desc="Parsing validation code"):
+            validation_output = row["validation_output"]
             if "def validate_input_args(" in validation_output:
                 validation_code =  "def validate_input_args(" + validation_output.split("def validate_input_args(")[1]
                 if "return" in validation_code:
@@ -459,22 +463,6 @@ def decode_shift(s: str):
                     validation_code = None
             else:
                 validation_code = None      
-            if validation_code is None:
-                new_prompt = prompt + "Do not give an incomplete function or incorrect format response. Example: \n" + validation_output + "\n The above response is WRONG because it does not contain the full validation function implementation from start to finish. Write the validation function now, start with the def and ending with the return. Validation Function:\n"
-                validation_output = model.generate(new_prompt, max_new_tokens=800)
-                df.at[index, "validation_output"] = validation_output
-                if "def validate_input_args(" in validation_output:
-                    validation_code =  "def validate_input_args(" + validation_output.split("def validate_input_args(")[1]
-                    if "return" in validation_code:
-                        validation_code = validation_code.split("return")[0] + "return"
-                    else:
-                        log_warn(validation_output)
-                        log_warn("Became")
-                        log_warn(validation_code)                        
-                        validation_code = None
-                else:
-                    log_warn(validation_output)
-                    validation_code = None      
             if validation_code is None:
                 log_warn(f"Could not generate validation code for index {index}\n" + validation_output, parameters=loaded_parameters)
                 continue
@@ -485,69 +473,139 @@ def decode_shift(s: str):
                 df.at[index, "test_func_validated"] = test_func_str
             except Exception as e:
                 log_warn(f"Could not exec validated function for index {index}: {str(e)}", parameters=loaded_parameters)
+        # drop test_func_validated Nans
+        original_length = len(df)
+        df = df[~df["test_func_validated"].isna()].reset_index(drop=True)
+        new_length = len(df)
+        log_info(f"Removed {original_length - new_length}/{original_length} invalid validation_code entries. Now with {new_length} entries...")
         return df       
 
     @staticmethod
-    def generate_examples(df):
-        model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
-        df["examples"] = None
-        df["more_examples_prompt"] = None
-        for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating example inputs"):
-            prompt = row["example_prompt"]
-            if prompt is None:
-                df.at[index, "examples"] = None
-                continue
-            example_code = model.generate(prompt, max_new_tokens=500)
-            df.at[index, "example_output"] = example_code
-            examples = []
-            for line in example_code.split("\n"):
-                line = line.strip()
-                if line.startswith("- "):
-                    line = line[2:].strip()
-                if line.startswith("(") and line.endswith(")"):                    
-                    examples.append(line)
-            df.at[index, "examples"] = examples
-            function_str = prompt.split("Function: ")[-1].strip()
-            more_examples_prompt = Prompts.more_examples.replace("[FUNC]", function_str)
-            more_examples_prompt.replace("[EXAMPLES]", example_code)
-            df.at[index, "more_examples_prompt"] = more_examples_prompt
-        return df
-    
-    @staticmethod
-    def generate_more_examples(df):
-        model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
-        df["more_examples"] = None
-        for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating more example inputs"):
-            prompt = row["more_examples_prompt"]
-            if prompt is None:
-                df.at[index, "more_examples"] = None
-                continue
-            example_code = model.generate(prompt, max_new_tokens=500)
-            df.at[index, "more_examples_output"] = example_code
-            examples = []
-            for line in example_code.split("\n"):
-                line = line.strip()
-                if line.startswith("- "):
-                    line = line[2:].strip()
-                if line.startswith("(") and line.endswith(")"):                    
-                    examples.append(line)
-            df.at[index, "more_examples"] = examples
-        return df
-
-    @staticmethod
-    def generate_description(df):
-        model = HuggingFaceModel("meta-llama/Meta-Llama-3-8B-Instruct")
+    def parse_description(df):
         df["description"] = None
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating descriptions"):
-            prompt = row["describe_prompt"]
-            description = model.generate(prompt, max_new_tokens=200)
-            if description.strip() == "":
-                prompt = prompt = " (continue the description and explain what the function does)\n continuation: this function takes in "
+            description = row["description_output"]
             if description.strip() == "":
                 log_warn(f"Could not generate description for index {index}", parameters=loaded_parameters)
                 description = None
             df.at[index, "description"] = description
-        return df
+        # drop test_func_validated Nans
+        original_length = len(df)
+        df = df[~df["description"].isna()].reset_index(drop=True)
+        new_length = len(df)
+        log_info(f"Removed {original_length - new_length}/{original_length} invalid description entries. Now with {new_length} entries...")
+        return df       
+    
+    @staticmethod
+    def parse_both(df):
+        return MidLoader.parse_description(MidLoader.parse_validation(df))
+
+    @staticmethod
+    def get_split_dfs(parameters, dataset_name):
+        data_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
+        splits = {}
+        files = os.listdir(data_dir)
+        for file in files: 
+            if file.endswith("_proc_description_output.jsonl"):
+                split_name = file.replace("_proc_description_output.jsonl", "")
+                df = pd.read_json(data_dir + file, lines=True)
+                log_info(f"Parsing File | {dataset_name}: {file}")
+                df = MidLoader.parse_both(df)
+                splits[split_name] = df
+        return splits
+
+
+    @staticmethod
+    def load_cruxeval(parameters):
+        dataset = MidLoader.get_split_dfs(parameters, "cruxeval")["test"]
+        def get_docstring_func(row, func_column="test_func_anon"):
+            func = row[func_column]
+            if func is None:
+                return None
+            first_indented_line = func.index("    validate_input_args")
+            # insert a docstring before this
+            doc_text = "Example usage: \n" + ">>> test_func(" + row['input'] + ")\n" + ">>> " + row['output']
+            func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+            return func
+        dataset["test_func_validated_w_docstring"] = dataset.apply(lambda x: get_docstring_func(x, "test_func_validated"), axis=1)
+        dataset["example_prompt"] = dataset["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
+        dataset = MidLoader.generate_examples(dataset)
+        return {"test": dataset}
+    
+    @staticmethod
+    def load_humaneval(parameters):
+        dataset = MidLoader.get_split_dfs(parameters, "humaneval")["test"]
+        dataset["example_prompt"] = dataset["test_func_validated"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
+        dataset = MidLoader.generate_examples(dataset)
+        return {"test": dataset}
+
+    @staticmethod
+    def load_mbpp(parameters):
+        # Muennighoff/mbpp
+        dataset = MidLoader.get_split_dfs(parameters, "mbpp")["test"]
+        def last_function(prompt):
+            funcs = prompt.split("def ")
+            return "def " + funcs[-1]
+
+        def add_docstring(row, func_column="test_func_anon"):
+            if row[func_column] is None:
+                return None
+            func = last_function(row[func_column])
+            text = row['prompt'].split("function to ")[-1].strip()
+            test_list = row['test_list']
+            text = text + "\nWill end up satisfying:\n" + "\n".join(test_list)
+            # in cruxeval, function declaration is always first and there are no type hints
+            header, body = func.split("):", 1)
+            docstring = f'    """\n    {text}\n    """'
+            new_func = header + "):" + docstring + body
+            return new_func
+        dataset["example_prompt"] = dataset.apply(lambda x: add_docstring(x, "test_func_validated"), axis=1).apply(lambda x: Prompts.example_creator + x if x is not None else None)
+        dataset = MidLoader.generate_examples(dataset)
+        return {"test": dataset}
+    
+    @staticmethod
+    def load_code_alpaca(parameters):
+        df = MidLoader.get_split_dfs(parameters, "code_alpaca")["train"]
+        def insert_docstring(row, func_column="test_func_anon"):
+            func = row[func_column]
+            if func is None:
+                return None
+            first_indented_line = func.index("    validate_input_args")
+            # insert a docstring before this
+            doc_text = row["instruction"]
+            func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+            return func
+        df["test_func_validated_w_docstring"] = df.apply(lambda x: insert_docstring(x, "test_func_validated"), axis=1)
+        df["example_prompt"] = df["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
+        df = MidLoader.generate_examples(df)
+        return {"train": df}
+    
+    @staticmethod
+    def load_magic_coder(parameters):
+        df = MidLoader.get_split_dfs(parameters, "magic_coder")["train"]
+        def insert_docstring(row, func_column="test_func_anon"):
+            func = row[func_column]
+            if func is None:
+                return None
+            first_indented_line = func.index("    validate_input_args")
+            # insert a docstring before this
+            doc_text = row["problem"]
+            func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+            return func
+        df["test_func_validated_w_docstring"] = df.apply(lambda x: insert_docstring(x, "test_func_validated"), axis=1)
+        df["example_prompt"] = df["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
+        return {"train": df}
+        
+    @staticmethod
+    def generate_examples(dataset_name, split, parameters):
+        input_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_mid.jsonl"
+        output_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_example_output.jsonl"        
+        input_column = "example_prompt"
+        output_column = "example_output"
+        max_new_tokens = 1200
+        RawLoaders.call_infer(run_name="examples", dataset_name=dataset_name, split=split, input_file=input_file, output_file=output_file, input_column=input_column, output_column=output_column, max_new_tokens=max_new_tokens, parameters=parameters)                        
+
+
 
 class RunTestFunc:
     """
@@ -619,28 +677,101 @@ class RunTestFunc:
 
 class FilteredLoader:
     @staticmethod
+    def parse_examples(df):
+        df["examples"] = None
+        df["n_examples"] = None
+        for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating example inputs"):
+            example_code = row["example_output"]
+            df.at[index, "example_output"] = example_code
+            examples = []
+            for line in example_code.split("\n"):
+                line = line.strip()
+                if line.startswith("- "):
+                    line = line[2:].strip()
+                if line.startswith("(") and line.endswith(")"):                    
+                    examples.append(line)
+            examples = list(set(examples)) # unique only                    
+            df.at[index, "examples"] = examples
+        # drop if there are less than 5 examples overall
+        original_length = len(df)
+        df = df[df["examples"].apply(lambda x: len(x) >= 5)].reset_index(drop=True)
+        new_length = len(df)
+        log_info(f"Removed {original_length - new_length}/{original_length} insufficient example entries. Now with {new_length} entries...")
+        return df
+
+
+    @staticmethod
+    def train_test_split(inputs, outputs):
+        train_inputs = []
+        train_outputs = []
+        test_inputs = []
+        test_outputs = []
+        for i in range(len(inputs)):
+            if len(train_inputs) >= 2:
+                continue
+            if i == 0:
+                train_inputs.append(inputs[i])
+                train_outputs.append(outputs[i])
+            else:
+                candidate_input = inputs[i]
+                candidate_output = outputs[i]
+                # pass it over if the output is already in train outputs
+                if candidate_output in train_outputs:
+                    test_inputs.append(candidate_input)
+                    test_outputs.append(candidate_output)
+                    continue
+                # pass it over if the existing train input has an identity mapping and this is also an identity mapping. 
+                existing_identity = False
+                candidate_identity = False
+                try: # might not be valid
+                    for train_input, train_output in zip(train_inputs, train_outputs):
+                        if train_input == train_output:
+                            existing_identity = True
+                            break
+
+                    if candidate_input == candidate_output:
+                        candidate_identity = True
+                except Exception as e:
+                    pass
+                if existing_identity and candidate_identity:
+                    test_inputs.append(candidate_input)
+                    test_outputs.append(candidate_output)
+                    continue
+                if existing_identity != candidate_identity:
+                    train_inputs.append(candidate_input)
+                    train_outputs.append(candidate_output)
+                else:
+                    test_inputs.append(candidate_input)
+                    test_outputs.append(candidate_output)
+        return train_inputs, train_outputs, test_inputs, test_outputs
+
+
+
+    @staticmethod
     def filter_examples(test_func_code: str, examples: list):
         try:
             runner = RunTestFunc(test_func_code)
         except Exception as e:
             return False, [], [], [], []
-        filtered_inputs = []
-        filtered_outputs = []
-        errored_inputs = []
-        errored_outputs = []
+        working_inputs = []
+        working_outputs = []
         for example in examples:
             try:
                 return_value, error = runner.run_test_str(example)
                 if error is None:
-                    filtered_inputs.append(example)
-                    filtered_outputs.append(repr(return_value))
+                    working_inputs.append(example)
+                    working_outputs.append(working_outputs)
                 else:
-                    errored_inputs.append(example)
-                    errored_outputs.append(error)
+                    pass
             except Exception as e:
-                errored_inputs.append(example)
-                errored_outputs.append(str(e))
-        return True, filtered_inputs, filtered_outputs, errored_inputs, errored_outputs
+                pass
+        if len(working_inputs) < 5:
+            return True, [], [], [], [] # Not enough to make a decent train set
+        
+        train_inputs, train_outputs, test_inputs, test_outputs = FilteredLoader.train_test_split(working_inputs, working_outputs)
+        if len(train_inputs) < 2:
+            return True, [], [], [], [] # Not enough diverse train examples
+        return True, train_inputs, train_outputs, test_inputs, test_outputs
 
 
     @staticmethod
@@ -654,15 +785,11 @@ class FilteredLoader:
         df["execable"] = None
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Filtering and annotating dataset"):
             test_func_code = row["test_func_validated"]
-            all_examples = list(set(row["examples"] + row["more_examples"]))
+            all_examples = list(set(row["examples"]))
             # shuffle all examples
             random.shuffle(all_examples)
-            execable, filtered_inputs, filtered_outputs, errored_inputs, errored_outputs = FilteredLoader.filter_examples(test_func_code, all_examples)
+            execable, train_inputs, train_outputs, test_inputs, test_outputs = FilteredLoader.filter_examples(test_func_code, all_examples)
             # first 2 filtered inputs/outputs are train, rest are test
-            train_inputs = filtered_inputs[:2]
-            train_outputs = filtered_outputs[:2]
-            test_inputs = filtered_inputs[2:]
-            test_outputs = filtered_outputs[2:]
             df.at[index, "train_inputs"] = train_inputs
             df.at[index, "train_outputs"] = train_outputs
             df.at[index, "test_inputs"] = test_inputs
@@ -671,16 +798,21 @@ class FilteredLoader:
         # take out not execable rows
         original_length = len(df)
         df = df[df["execable"] == True].reset_index(drop=True)
+        # take out the rows with empty train_inputs or test_inputs
+        df = df[(df["train_inputs"].apply(len) >= 2)].reset_index(drop=True)
         cleaned_length = len(df)
-        log_info(f"Filtered dataset: removed {original_length - cleaned_length}/{original_length} rows with non-execable test functions", parameters=loaded_parameters)
+        log_info(f"Filtered dataset: removed {original_length - cleaned_length}/{original_length} rows with non-execable test functions or insufficient examples", parameters=loaded_parameters)
         return df
+
 
 
 
 @click.command()
 @click.option("--dataset_name", required=True, help="The name of the dataset to load from the Hugging Face Hub.", type=click.Choice(TEST_DATASETS + TRAIN_DATASETS))
+@click.option("--execute_inference", default=True, help="Whether to execute inference during processing.", type=bool)
+@click.option("--mid_step", default=True, help="Whether to execute the mid step processing after raw processing.", type=bool)
 @click.pass_obj
-def process_raw(parameters, dataset_name):
+def process_raw(parameters, dataset_name, execute_inference, mid_step):
     save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
     os.makedirs(save_dir, exist_ok=True)
     log_info(f"Processing raw dataset {dataset_name}", parameters=parameters)
@@ -698,15 +830,36 @@ def process_raw(parameters, dataset_name):
         log_error(f"Dataset {dataset_name} not recognized.", parameters=parameters)
     for data_split in data_splits:
         csv = data_splits[data_split]
-        csv_clean = csv[["test_func_validated", "description", "examples", "more_examples"]]
-        # remove rows where test_func_validated is None or description is None or an empty string
-        original_length = len(csv_clean)
-        csv_clean = csv_clean[csv_clean["test_func_validated"].notnull() & csv_clean["description"].notnull() & (csv_clean["description"].str.strip() != "")]
-        cleaned_length = len(csv_clean)
-        log_info(f"Cleaned dataset {dataset_name} split {data_split}: removed {original_length - cleaned_length}/{original_length} rows with invalid test_func_validated or description", parameters=parameters)
-        csv_clean.to_json(f"{save_dir}/{data_split}_clean.jsonl", orient="records", lines=True)
         csv.to_json(f"{save_dir}/{data_split}_proc.jsonl", orient="records", lines=True)
-        log_info(f"Saved {dataset_name} split {data_split} to {save_dir}/{data_split}_clean.jsonl", parameters=parameters)
+        if execute_inference:
+            RawLoaders.generate_validation_code(dataset_name, data_split, parameters)
+            RawLoaders.generate_description(dataset_name, data_split, parameters)
+            log_info(f"Completed raw processing for dataset {dataset_name} split {data_split}", parameters=parameters)
+        else:
+            log_info(f"Skipped inference for dataset {dataset_name} split {data_split}", parameters=parameters)
+
+
+    if execute_inference and mid_step:
+        log_info(f"Executing mid step processing for dataset {dataset_name}", parameters=parameters)
+        if dataset_name == "humaneval":
+            data_splits = MidLoader.load_humaneval(parameters)
+        elif dataset_name == "cruxeval":
+            data_splits = MidLoader.load_cruxeval(parameters)
+        elif dataset_name == "mbpp":
+            data_splits = MidLoader.load_mbpp(parameters)
+        elif dataset_name == "code_alpaca":
+            data_splits = MidLoader.load_code_alpaca(parameters)
+        elif dataset_name == "magic_coder":
+            data_splits = MidLoader.load_magic_coder(parameters)
+        else:
+            log_error(f"Dataset {dataset_name} not recognized.", parameters=parameters)
+        for data_split in data_splits:
+            csv = data_splits[data_split]
+            csv.to_json(f"{save_dir}/{data_split}_proc_mid.jsonl", orient="records", lines=True)
+            MidLoader.generate_examples(dataset_name, data_split, parameters)
+            log_info(f"Completed mid step processing for dataset {dataset_name} split {data_split}", parameters=parameters)
+    else:
+        log_info(f"Skipped mid step processing for dataset {dataset_name}", parameters=parameters)
 
 
 @click.command()
@@ -723,7 +876,7 @@ def process_final(parameters, dataset_name):
     for file in files:
         if file.endswith("_clean.jsonl"):
             split_name = file.replace("_clean.jsonl", "")
-            split_dict[split_name] = pd.read_json(f"{load_dir}/{file}", lines=True)
+            split_dict[split_name] = FilteredLoader.parse_examples(pd.read_json(f"{load_dir}/{file}", lines=True))
     if split_dict == {}:
         log_error(f"No cleaned jsonl files found in {load_dir} for dataset {dataset_name}", parameters=parameters)
     for split_name in split_dict:
@@ -736,6 +889,7 @@ def process_final(parameters, dataset_name):
         log_info(f"Saved final filtered dataset with {len(df_filtered_clean)} rows for {dataset_name} split {split_name} to {save_dir}/{split_name}_final.jsonl", parameters=parameters)
         dataset = Dataset.from_pandas(df_filtered_clean)
         dataset.push_to_hub(f"{huggingface_hub_username}/{huggingface_hub_repo_name}", private=False, split=split_name, config_name=dataset_name)
+
         
 
 
