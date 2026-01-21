@@ -12,7 +12,7 @@ REQUIRED_ARGS=("i" "o" "m" "c" "d")
 
 # Help function
 usage() {
-    echo "Usage: $0 -m model_name -i input_file -o output_file -c input_column -d output_column [-p padding] [-b batch_size] [-t max_new_tokens] [-n openai_batch_name]"
+    echo "Usage: $0 -m model_name -i input_file -o output_file -c input_column -d output_column [-p padding] [-b batch_size] [-t max_new_tokens] [-n openai_batch_name] [-g generation_suffix]"
     echo "Required:"
     echo "  -m model_name     Name of the model to use"
     echo "  -i input_file      Path to the input file" 
@@ -24,13 +24,14 @@ usage() {
     echo "  -b batch_size       Batch size"
     echo "  -t max_new_tokens   Maximum new tokens to generate"
     echo "  -n openai_batch_name OpenAI batch name"
+    echo "  -g generation_suffix Suffix for generation_complete column"
     exit 1
 }
 
 # Parse flags
-while getopts ":m:i:c:d:b:t:p:n:o:" opt; do
+while getopts ":m:i:c:d:b:t:p:n:o:g:" opt; do
     case $opt in
-        m|i|c|b|t|p|n|o|d)
+        m|i|c|b|t|p|n|o|d|g)
             ARGS["$opt"]="$OPTARG"
             ;;
         \?)
@@ -65,10 +66,10 @@ done
 
 if [[ -n "${ARGS["n"]}" ]]; then
     echo "Running OpenAI inference"
-    bash scripts/llm_utils.sh python infer.py --model_name ${ARGS["m"]} --input_file ${ARGS["i"]} --output_file ${ARGS["o"]} --input_column ${ARGS["c"]} --output_column ${ARGS["d"]} --checkpoint_every 0.1 --max_new_tokens ${ARGS["t"]} openai --batch_name ${ARGS["n"]}
+    bash scripts/llm_utils.sh python infer.py --model_name ${ARGS["m"]} --input_file ${ARGS["i"]} --output_file ${ARGS["o"]} --input_column ${ARGS["c"]} --output_column ${ARGS["d"]} --generation_complete_column "inference_complete"${ARGS["g"]} --checkpoint_every 0.1 --max_new_tokens ${ARGS["t"]} openai --batch_name ${ARGS["n"]}
 else
     echo "Running local inference"
-    bash scripts/llm_utils.sh python infer.py --model_name ${ARGS["m"]} --input_file ${ARGS["i"]} --output_file ${ARGS["o"]} --input_column ${ARGS["c"]} --output_column ${ARGS["d"]} --checkpoint_every 0.1 --max_new_tokens ${ARGS["t"]} hf --batch_size ${ARGS["b"]} --padding_side ${ARGS["p"]} 
+    bash scripts/llm_utils.sh python infer.py --model_name ${ARGS["m"]} --input_file ${ARGS["i"]} --output_file ${ARGS["o"]} --input_column ${ARGS["c"]} --output_column ${ARGS["d"]} --generation_complete_column "inference_complete"${ARGS["g"]} --checkpoint_every 0.1 --max_new_tokens ${ARGS["t"]} hf --batch_size ${ARGS["b"]} --padding_side ${ARGS["p"]} 
 fi
 
 

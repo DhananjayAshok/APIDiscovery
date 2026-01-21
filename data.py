@@ -145,7 +145,7 @@ Description:
 Checks if there are any two distinct elements in the input list 'arg0' whose absolute difference is less than the specified 'arg1' threshold. It returns True if such a pair exists, otherwise it returns False.
 [STOP]
 Note, avoid any mention the usage of the validate_input_args method even if it exists, focus only test_func functionallity
-Now, describe the following function only and then say [STOP]
+Now, describe the following function only and then say [STOP]. It is extremely important you say [STOP] after the description. Do not just keep talking. 
 Function:
 
 """
@@ -388,8 +388,16 @@ def decode_shift(s: str):
             if x.count("```") != 1:
                 return None
             x = x.split("```")[0]
+            if x.count("def ") != 1:
+                return None
+            if "class " in x:
+                return None
             return x
         df['func'] = df['solution'].apply(get_func)
+        original_length = len(df)
+        df = df[~df['func'].isna()].reset_index(drop=True)
+        new_length = len(df)
+        log_info(f"MagicCoder: Removed {original_length - new_length}/{original_length} entries without a valid single python function.")
         df["test_func_anon"] = df["func"].apply(anonymize_header)
         def insert_docstring(row, func_column="test_func_anon"):
             func = row[func_column]
@@ -414,19 +422,17 @@ def decode_shift(s: str):
         if "gpt" in model:
             open_ai_batch_name = f"{model}-{run_name}-{dataset_name}-{split}"
         openaibatch_str = "-n " + open_ai_batch_name if open_ai_batch_name != "" else ""
-        command_string = f"bash scripts/infer.sh -i {input_file} -o {output_file} -m {model} -c {input_column} -d {output_column} -t {max_new_tokens} {openaibatch_str}"
+        command_string = f"bash scripts/infer.sh -i {input_file} -o {output_file} -m {model} -c {input_column} -d {output_column} -t {max_new_tokens} -g {run_name} {openaibatch_str}"
         log_info(f"Generating validation code with command: {command_string}")
         subprocess.run(command_string, shell=True, check=True)
         try:
             df = pd.read_json(output_file, lines=True)
-            if "inference_completed" in df.columns:
-                df.drop("inference_completed", axis=1, inplace=True)
-            df.drop("inference_completed", axis=1, inplace=True)
             if "output_logits" in df.columns:
                 df.drop("output_logits", axis=1, inplace=True)
             df.to_json(output_file, orient="records", lines=True)
-        except FileNotFoundError:
+        except:
             log_warn(f"Output file {output_file} not found after inference command.", parameters=parameters)
+            return None
         return df
     
     @staticmethod
@@ -436,7 +442,7 @@ def decode_shift(s: str):
         input_column = "validation_prompt"
         output_column = "validation_output"
         max_new_tokens = 300
-        RawLoaders.call_infer(run_name="validation-code", dataset_name=dataset_name, split=split, input_file=input_file, output_file=output_file, input_column=input_column, output_column=output_column, max_new_tokens=max_new_tokens, parameters=parameters)
+        return RawLoaders.call_infer(run_name="validation-code", dataset_name=dataset_name, split=split, input_file=input_file, output_file=output_file, input_column=input_column, output_column=output_column, max_new_tokens=max_new_tokens, parameters=parameters)
 
 
     @staticmethod
@@ -444,15 +450,16 @@ def decode_shift(s: str):
         input_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_validation_output.jsonl"
         output_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_description_output.jsonl"        
         input_column = "description_prompt"
-        output_column = "description"
+        output_column = "description_output"
         max_new_tokens = 600
-        RawLoaders.call_infer(run_name="description", dataset_name=dataset_name, split=split, input_file=input_file, output_file=output_file, input_column=input_column, output_column=output_column, max_new_tokens=max_new_tokens, parameters=parameters)                
+        return RawLoaders.call_infer(run_name="description", dataset_name=dataset_name, split=split, input_file=input_file, output_file=output_file, input_column=input_column, output_column=output_column, max_new_tokens=max_new_tokens, parameters=parameters)                
 
 
 class MidLoader:
     @staticmethod
     def parse_validation(df):
         df["test_func_validated"] = None
+        df["validation_output"] = df["validation_output"].apply(lambda x: x[0] if isinstance(x, list) else x)
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Parsing validation code"):
             validation_output = row["validation_output"]
             if "def validate_input_args(" in validation_output:
@@ -483,11 +490,17 @@ class MidLoader:
     @staticmethod
     def parse_description(df):
         df["description"] = None
+        print(df.columns)
+        df["description_output"] = df["description_output"].apply(lambda x: x[0] if isinstance(x, list) else x)        
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating descriptions"):
             description = row["description_output"]
             if description.strip() == "":
                 log_warn(f"Could not generate description for index {index}", parameters=loaded_parameters)
                 description = None
+            if "\n\n" in description:
+                description = description.split("\n\n")[0]
+            if "\n" in description:
+                description = description.split("\n")[0]
             df.at[index, "description"] = description
         # drop test_func_validated Nans
         original_length = len(df)
@@ -529,14 +542,12 @@ class MidLoader:
             return func
         dataset["test_func_validated_w_docstring"] = dataset.apply(lambda x: get_docstring_func(x, "test_func_validated"), axis=1)
         dataset["example_prompt"] = dataset["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
-        dataset = MidLoader.generate_examples(dataset)
         return {"test": dataset}
     
     @staticmethod
     def load_humaneval(parameters):
         dataset = MidLoader.get_split_dfs(parameters, "humaneval")["test"]
         dataset["example_prompt"] = dataset["test_func_validated"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
-        dataset = MidLoader.generate_examples(dataset)
         return {"test": dataset}
 
     @staticmethod
@@ -560,7 +571,6 @@ class MidLoader:
             new_func = header + "):" + docstring + body
             return new_func
         dataset["example_prompt"] = dataset.apply(lambda x: add_docstring(x, "test_func_validated"), axis=1).apply(lambda x: Prompts.example_creator + x if x is not None else None)
-        dataset = MidLoader.generate_examples(dataset)
         return {"test": dataset}
     
     @staticmethod
@@ -577,7 +587,6 @@ class MidLoader:
             return func
         df["test_func_validated_w_docstring"] = df.apply(lambda x: insert_docstring(x, "test_func_validated"), axis=1)
         df["example_prompt"] = df["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
-        df = MidLoader.generate_examples(df)
         return {"train": df}
     
     @staticmethod
@@ -603,7 +612,7 @@ class MidLoader:
         input_column = "example_prompt"
         output_column = "example_output"
         max_new_tokens = 1200
-        RawLoaders.call_infer(run_name="examples", dataset_name=dataset_name, split=split, input_file=input_file, output_file=output_file, input_column=input_column, output_column=output_column, max_new_tokens=max_new_tokens, parameters=parameters)                        
+        return RawLoaders.call_infer(run_name="examples", dataset_name=dataset_name, split=split, input_file=input_file, output_file=output_file, input_column=input_column, output_column=output_column, max_new_tokens=max_new_tokens, parameters=parameters)                        
 
 
 
@@ -624,6 +633,8 @@ class RunTestFunc:
         exec(func_code, globals())
         self.test_func = globals()["test_func"]
         self.access_counter = 0
+        self.attempted_inputs = []
+        self.recieved_outputs = []
         self.timeout = timeout
 
     @staticmethod
@@ -637,6 +648,7 @@ class RunTestFunc:
 
     def run_test(self, *args):
         self.access_counter += 1
+        self.attempted_inputs.append(args)
         
         # Use a Queue to get the return value back from the child process
         queue = multiprocessing.Queue()
@@ -651,11 +663,15 @@ class RunTestFunc:
             # If the process is still running after 15s, kill it
             p.terminate()
             p.join()
+            self.recieved_outputs.append((None, f"Timeout: Function execution exceeded {self.timeout} seconds"))
             return None, f"Timeout: Function execution exceeded {self.timeout} seconds"
         
         # If it finished, grab the result from the queue
         if not queue.empty():
-            return queue.get()
+            result = queue.get()
+            self.recieved_outputs.append(result)
+            return result
+        self.recieved_outputs.append((None, "Unknown error during execution"))
         return None, "Unknown error during execution"
     
     def run_test_str(self, args_str: str):
@@ -680,6 +696,7 @@ class FilteredLoader:
     def parse_examples(df):
         df["examples"] = None
         df["n_examples"] = None
+        df["example_output"] = df["example_output"].apply(lambda x: x[0] if isinstance(x, list) else x)                
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating example inputs"):
             example_code = row["example_output"]
             df.at[index, "example_output"] = example_code
@@ -831,35 +848,40 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
     for data_split in data_splits:
         csv = data_splits[data_split]
         csv.to_json(f"{save_dir}/{data_split}_proc.jsonl", orient="records", lines=True)
+        breakpoint()
         if execute_inference:
-            RawLoaders.generate_validation_code(dataset_name, data_split, parameters)
-            RawLoaders.generate_description(dataset_name, data_split, parameters)
-            log_info(f"Completed raw processing for dataset {dataset_name} split {data_split}", parameters=parameters)
+            df = RawLoaders.generate_validation_code(dataset_name, data_split, parameters)
+            if df is not None:
+                df = RawLoaders.generate_description(dataset_name, data_split, parameters)
+            if df is not None:
+                log_info(f"Completed raw processing for dataset {dataset_name} split {data_split}", parameters=parameters)
         else:
             log_info(f"Skipped inference for dataset {dataset_name} split {data_split}", parameters=parameters)
 
 
     if execute_inference and mid_step:
-        log_info(f"Executing mid step processing for dataset {dataset_name}", parameters=parameters)
-        if dataset_name == "humaneval":
-            data_splits = MidLoader.load_humaneval(parameters)
-        elif dataset_name == "cruxeval":
-            data_splits = MidLoader.load_cruxeval(parameters)
-        elif dataset_name == "mbpp":
-            data_splits = MidLoader.load_mbpp(parameters)
-        elif dataset_name == "code_alpaca":
-            data_splits = MidLoader.load_code_alpaca(parameters)
-        elif dataset_name == "magic_coder":
-            data_splits = MidLoader.load_magic_coder(parameters)
+        if df is not None:
+            log_info(f"Executing mid step processing for dataset {dataset_name}", parameters=parameters)
+            if dataset_name == "humaneval":
+                data_splits = MidLoader.load_humaneval(parameters)
+            elif dataset_name == "cruxeval":
+                data_splits = MidLoader.load_cruxeval(parameters)
+            elif dataset_name == "mbpp":
+                data_splits = MidLoader.load_mbpp(parameters)
+            elif dataset_name == "code_alpaca":
+                data_splits = MidLoader.load_code_alpaca(parameters)
+            elif dataset_name == "magic_coder":
+                data_splits = MidLoader.load_magic_coder(parameters)
+            else:
+                log_error(f"Dataset {dataset_name} not recognized.", parameters=parameters)
+            for data_split in data_splits:
+                csv = data_splits[data_split]
+                csv.to_json(f"{save_dir}/{data_split}_proc_mid.jsonl", orient="records", lines=True)
+                df = MidLoader.generate_examples(dataset_name, data_split, parameters)
+                if df is not None:
+                    log_info(f"Completed mid step processing for dataset {dataset_name} split {data_split}", parameters=parameters)
         else:
-            log_error(f"Dataset {dataset_name} not recognized.", parameters=parameters)
-        for data_split in data_splits:
-            csv = data_splits[data_split]
-            csv.to_json(f"{save_dir}/{data_split}_proc_mid.jsonl", orient="records", lines=True)
-            MidLoader.generate_examples(dataset_name, data_split, parameters)
-            log_info(f"Completed mid step processing for dataset {dataset_name} split {data_split}", parameters=parameters)
-    else:
-        log_info(f"Skipped mid step processing for dataset {dataset_name}", parameters=parameters)
+            log_info(f"Skipped mid step processing for dataset {dataset_name}", parameters=parameters)
 
 
 @click.command()
