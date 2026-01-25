@@ -412,6 +412,7 @@ def decode_shift(s: str):
         df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
 
         df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
+        df = df.sample(frac=0.75, random_state=42).reset_index(drop=True)
         return {"train": df}
         
     
@@ -753,13 +754,9 @@ class FilteredLoader:
                 if existing_identity and candidate_identity:
                     test_inputs.append(candidate_input)
                     test_outputs.append(candidate_output)
-                    continue
-                if existing_identity != candidate_identity:
+                else:
                     train_inputs.append(candidate_input)
                     train_outputs.append(candidate_output)
-                else:
-                    test_inputs.append(candidate_input)
-                    test_outputs.append(candidate_output)
         return train_inputs, train_outputs, test_inputs, test_outputs
 
 
@@ -777,14 +774,13 @@ class FilteredLoader:
                 return_value, error = runner.run_test_str(example)
                 if error is None:
                     working_inputs.append(example)
-                    working_outputs.append(working_outputs)
+                    working_outputs.append(return_value)
                 else:
                     pass
             except Exception as e:
                 pass
         if len(working_inputs) < 5:
             return True, [], [], [], [] # Not enough to make a decent train set
-        
         train_inputs, train_outputs, test_inputs, test_outputs = FilteredLoader.train_test_split(working_inputs, working_outputs)
         if len(train_inputs) < 2:
             return True, [], [], [], [] # Not enough diverse train examples
@@ -796,9 +792,9 @@ class FilteredLoader:
         random.seed(42)
         # dataset has columns: test_func_validated, examples, more_examples, description
         df["train_inputs"] = None
-        df["train_outputs"] = None
+        #df["train_outputs"] = None
         df["test_inputs"] = None
-        df["test_outputs"] = None
+        #df["test_outputs"] = None
         df["execable"] = None
         for index, row in tqdm(df.iterrows(), total=len(df), desc="Filtering and annotating dataset"):
             test_func_code = row["test_func_validated"]
@@ -808,9 +804,9 @@ class FilteredLoader:
             execable, train_inputs, train_outputs, test_inputs, test_outputs = FilteredLoader.filter_examples(test_func_code, all_examples)
             # first 2 filtered inputs/outputs are train, rest are test
             df.at[index, "train_inputs"] = train_inputs
-            df.at[index, "train_outputs"] = train_outputs
+            #df.at[index, "train_outputs"] = train_outputs
             df.at[index, "test_inputs"] = test_inputs
-            df.at[index, "test_outputs"] = test_outputs
+            #df.at[index, "test_outputs"] = test_outputs
             df.at[index, "execable"] = execable
         # take out not execable rows
         original_length = len(df)
@@ -848,15 +844,21 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
     for data_split in data_splits:
         csv = data_splits[data_split]
         csv.to_json(f"{save_dir}/{data_split}_proc.jsonl", orient="records", lines=True)
-        breakpoint()
         if execute_inference:
             df = RawLoaders.generate_validation_code(dataset_name, data_split, parameters)
-            if df is not None:
-                df = RawLoaders.generate_description(dataset_name, data_split, parameters)
-            if df is not None:
-                log_info(f"Completed raw processing for dataset {dataset_name} split {data_split}", parameters=parameters)
-        else:
-            log_info(f"Skipped inference for dataset {dataset_name} split {data_split}", parameters=parameters)
+            if dataset_name == "mbpp":
+                # save this file to the description_output directly
+                df.to_json(f"{save_dir}/{data_split}_proc_description_output.jsonl", orient="records", lines=True)
+                log_info(f"Completed raw processing for dataset {dataset_name} split {data_split}",
+                            parameters=parameters)
+                continue
+            else:
+                if df is not None:
+                    df = RawLoaders.generate_description(dataset_name, data_split, parameters)
+                if df is not None:
+                    log_info(f"Completed raw processing for dataset {dataset_name} split {data_split}", parameters=parameters)
+                else:
+                    log_info(f"Skipped inference for dataset {dataset_name} split {data_split}", parameters=parameters)
 
 
     if execute_inference and mid_step:
@@ -896,20 +898,18 @@ def process_final(parameters, dataset_name):
     files = os.listdir(load_dir)
     split_dict = {}
     for file in files:
-        if file.endswith("_clean.jsonl"):
-            split_name = file.replace("_clean.jsonl", "")
+        if file.endswith("proc_example_output.jsonl"):
+            split_name = file.replace("proc_example_output.jsonl", "")
             split_dict[split_name] = FilteredLoader.parse_examples(pd.read_json(f"{load_dir}/{file}", lines=True))
     if split_dict == {}:
         log_error(f"No cleaned jsonl files found in {load_dir} for dataset {dataset_name}", parameters=parameters)
     for split_name in split_dict:
         df = split_dict[split_name]
         df_filtered = FilteredLoader.filter_annotate_dataset(df)
-        df_filtered = df_filtered[["test_func_validated", "description", "train_inputs", "train_outputs", "test_inputs", "test_outputs"]]
-        df_filtered_clean = df_filtered[(df_filtered['train_inputs'].apply(len) >= 2) & (df_filtered['test_inputs'].apply(len) >= 1)].reset_index(drop=True) # Get those where some inputs are present for both train and test.
-        df_filtered_clean.to_json(f"{save_dir}/{split_name}_final.jsonl", orient="records", lines=True)
+        df_filtered = df_filtered[["test_func_validated", "description", "train_inputs", "test_inputs"]]
         df_filtered.to_json(f"{save_dir}/{split_name}_filtered.jsonl", orient="records", lines=True)
-        log_info(f"Saved final filtered dataset with {len(df_filtered_clean)} rows for {dataset_name} split {split_name} to {save_dir}/{split_name}_final.jsonl", parameters=parameters)
-        dataset = Dataset.from_pandas(df_filtered_clean)
+        log_info(f"Saved final filtered dataset with {len(df_filtered)} rows for {dataset_name} split {split_name} to {save_dir}/{split_name}_final.jsonl", parameters=parameters)
+        dataset = Dataset.from_pandas(df_filtered)
         dataset.push_to_hub(f"{huggingface_hub_username}/{huggingface_hub_repo_name}", private=False, split=split_name, config_name=dataset_name)
 
         
