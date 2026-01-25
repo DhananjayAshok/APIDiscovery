@@ -22,7 +22,7 @@ class OpenAIModel(ModelInterface):
         self.previous_call = perf_counter() - self.seconds_per_query
 
     def generate(
-        self, prompt: str, max_new_tokens: int = 50, temperature: float = 1.0
+        self, prompt: str, max_new_tokens: int = 50, temperature: float = None
     ) -> str:
         time_to_wait = self.seconds_per_query - (perf_counter() - self.previous_call)
         if time_to_wait > 0:
@@ -44,7 +44,7 @@ class HuggingFaceModel(ModelInterface):
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
     def generate(
-        self, prompt: str, max_new_tokens: int = 50, temperature: float = 1.0
+        self, prompt: str, max_new_tokens: int = 50, temperature: float = None
     ) -> str:
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         output_ids = self.model.generate(
@@ -53,6 +53,7 @@ class HuggingFaceModel(ModelInterface):
             stop_strings=["[STOP]"],
             max_new_tokens=max_new_tokens,
             temperature=temperature,
+            do_sample=temperature is not None and temperature > 0,
             pad_token_id=self.tokenizer.eos_token_id
         )
         output_only_ids = output_ids[:, inputs["input_ids"].shape[-1] :]
