@@ -44,7 +44,11 @@ class HuggingFaceModel(ModelInterface):
         self.tokenizer.pad_token = self.tokenizer.eos_token
 
     def generate(
-        self, prompt: str, max_new_tokens: int = 50, temperature: float = None
+        self,
+        prompt: str,
+        max_new_tokens: int = 50,
+        temperature: float = None,
+        repetition_penalty: float = 1.1,
     ) -> str:
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
         output_ids = self.model.generate(
@@ -54,7 +58,8 @@ class HuggingFaceModel(ModelInterface):
             max_new_tokens=max_new_tokens,
             temperature=temperature,
             do_sample=temperature is not None and temperature > 0,
-            pad_token_id=self.tokenizer.eos_token_id
+            pad_token_id=self.tokenizer.eos_token_id,
+            repetition_penalty=repetition_penalty,
         )
         output_only_ids = output_ids[:, inputs["input_ids"].shape[-1] :]
         text = self.tokenizer.decode(output_only_ids[0], skip_special_tokens=True)
