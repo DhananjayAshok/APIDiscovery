@@ -267,7 +267,7 @@ def run_eval_on_dataset(
         ]
         data = []
         for i, row in tqdm(
-            dataset[:5].iterrows(),
+            dataset.iterrows(),
             total=len(dataset),
             desc=f"Evaluating {dataset_name}",
         ):
