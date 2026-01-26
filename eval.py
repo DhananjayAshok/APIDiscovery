@@ -112,7 +112,7 @@ Hypothesis Conclusion: """
         else:
             hypothesis = reflection_response.lower()
             decision = "no"
-        if True:
+        if False:
             print(f"Iteration {i+1}:")
             print(f"Reasoning: {reasoning}")
             print(f"Suggested inputs: {suggested_inputs}")
