@@ -309,8 +309,8 @@ def run_eval_on_dataset(
         log_info(
             f"n_queries: {avg_n_queries}, concluded: {round(perc_concluded* 100, 2)}, score: {avg_score}"
         )
-        log_info(df.groupby("concluded")["score"].mean())
-        log_info(df[["n_queries", "score"]].mean())
+        log_info(scored_df.groupby("concluded")["score"].mean())
+        log_info(scored_df[["n_queries", "score"]].mean())
 
 
 @click.command()
