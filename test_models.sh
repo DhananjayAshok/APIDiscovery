@@ -1,8 +1,9 @@
-models=("meta-llama/Meta-Llama-3-8B-Instruct" "Qwen/Qwen3-8B" "mistralai/Mistral-7B-Instruct-v0.3")
+models=("meta-llama/Meta-Llama-3-8B-Instruct" "gpt-4o-mini")
+datasets=("humaneval" "cruxeval" "mbpp")
 
-for dataset_name in humaneval cruxeval mbpp; do
-    for model_name in "${models[@]}"; do
+for model_name in "${models[@]}"; do
+    for dataset_name in "${datasets[@]}"; do
         echo "Testing model: $model_name on dataset: $dataset_name"
-        python eval.py --dataset_name "$dataset_name" --model_name "$model_name"
+        python eval.py --dataset_name "$dataset_name" --model_name "$model_name" --override_eval
     done
 done

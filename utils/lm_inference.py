@@ -34,7 +34,10 @@ class OpenAIModel(ModelInterface):
             max_output_tokens=max_new_tokens,
             temperature=temperature,
         )
-        return response.output_text
+        text = response.output_text
+        if "[STOP]" in text:
+            text = text.split("[STOP]")[0]
+        return text.strip()
 
 
 class HuggingFaceModel(ModelInterface):
