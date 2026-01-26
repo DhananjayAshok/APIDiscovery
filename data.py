@@ -7,7 +7,7 @@
 2. Load the jsonl files and then filter the examples based on which ones do not trigger an error when provided into the test_func_validated. For each example, add the outputs too. Push the filtered datasets to Hugging Face Hub. Will have final columns:
     - test_func_validated: The function code with anonymized function name and added validate_input_args call
     - description: A brief description of what the function does
-    - train_inputs: A list of example inputs to the function. Can be used to guide the api discovery process. Is small (no more than 2 points). 
+    - train_inputs: A list of example inputs to the function. Can be used to guide the api discovery process. Is small (no more than 2 points).
     - train_outputs: A list of outputs from the function for the corresponding inputs. Is the same length as train_inputs.
     - test_inputs: A list of example inputs to the function that did not error. No overlap with train_inputs.
     - test_outputs: A list of outputs from the function for the corresponding inputs. Is the same length as test_inputs.
@@ -150,27 +150,29 @@ Function:
 
 """
 
-    
+
 def anonymize_header(func_code: str) -> str:
     header_start = func_code.index("def ")
     # find the next "(" after header_start
     paren_index = func_code.index("(", header_start)
     # the function name is between header_start + 4 and paren_index
-    anonymized_name = func_code[:header_start + 4] + "test_func" + func_code[paren_index:]
+    anonymized_name = (
+        func_code[: header_start + 4] + "test_func" + func_code[paren_index:]
+    )
     new_paren_index = anonymized_name.index("(", header_start)
     paren_close_index = anonymized_name.index(")", new_paren_index)
-    args_raw = anonymized_name[new_paren_index + 1:paren_close_index].split(",")
+    args_raw = anonymized_name[new_paren_index + 1 : paren_close_index].split(",")
     def_end = anonymized_name.index(":", paren_close_index)
-    preamble = anonymized_name[:header_start + 4]
-    header = anonymized_name[header_start+4:def_end + 1]
-    body = anonymized_name[def_end + 1:]
+    preamble = anonymized_name[: header_start + 4]
+    header = anonymized_name[header_start + 4 : def_end + 1]
+    body = anonymized_name[def_end + 1 :]
     indent = None
     for line in body.split("\n"):
         stripped_line = line.lstrip()
         if stripped_line != "":
-            indent = line[:len(line) - len(stripped_line)]
+            indent = line[: len(line) - len(stripped_line)]
             break
-    if indent == "  ": # then convert to 4 spaces
+    if indent == "  ":  # then convert to 4 spaces
         body = body.replace("  ", "    ")
     for i, arg_raw in enumerate(args_raw):
         if ":" in arg_raw:
@@ -178,20 +180,20 @@ def anonymize_header(func_code: str) -> str:
         arg_name = arg_raw.strip()
         # assumes the indent is 4 spaces
         header = header.replace(f" {arg_name} ", f" arg{i} ")
-        header = header.replace(f"({arg_name})", f"(arg{i})")        
-        header = header.replace(f" {arg_name}:", f" arg{i}:")        
+        header = header.replace(f"({arg_name})", f"(arg{i})")
+        header = header.replace(f" {arg_name}:", f" arg{i}:")
         header = header.replace(f",{arg_name}:", f",arg{i}:")
         header = header.replace(f",{arg_name},", f",arg{i},")
         header = header.replace(f",{arg_name} ", f",arg{i} ")
         header = header.replace(f" {arg_name},", f" arg{i},")
         header = header.replace(f"({arg_name} ", f"(arg{i} ")
         header = header.replace(f"({arg_name},", f"(arg{i},")
-        header = header.replace(f"({arg_name}:", f"(arg{i}:")        
+        header = header.replace(f"({arg_name}:", f"(arg{i}:")
         header = header.replace(f" {arg_name}):", f" arg{i}):")
-        header = header.replace(f",{arg_name}):", f",arg{i}):")        
+        header = header.replace(f",{arg_name}):", f",arg{i}):")
         body = f"    {arg_name} = arg{i}\n" + body
     # adding a validate function at the start of the body
-    # should be able to exec anonymized code without the validate_input_args call now, do it and if it fails I need to debug:    
+    # should be able to exec anonymized code without the validate_input_args call now, do it and if it fails I need to debug:
     validate_call = "    validate_input_args("
     for i, arg_raw in enumerate(args_raw):
         if i > 0:
@@ -216,6 +218,7 @@ def move_imports_top(func_code: str) -> str:
     new_code = "\n".join(import_lines + other_lines)
     return new_code
 
+
 class RawLoaders:
     """
     Returns the raw datasets in the form:
@@ -227,11 +230,11 @@ class RawLoaders:
     The CSV has guaranteed columns:
     - "test_func": A body of code that imports required dependencies and defines a function called test_func fully. Can run exec on this code
     - "inputs": List of strings representing arg inputs to test_func. Each string can be eval'd to get the actual input.
-    - "outputs": List of strings representing outputs from test_func. 
+    - "outputs": List of strings representing outputs from test_func.
 
     May have other columns.
-    - "raw_text": A rough prompt that was used to generate the function. May not be present in all datasets and may need rewriting. 
-    - 
+    - "raw_text": A rough prompt that was used to generate the function. May not be present in all datasets and may need rewriting.
+    -
 
     The following pattern should work:
     ```python
@@ -250,22 +253,41 @@ class RawLoaders:
         # rename code column to test_func
         dataset = dataset.rename(columns={"code": "test_func"})
         dataset["test_func_anon"] = dataset["test_func"].apply(anonymize_header)
-        #dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
-        #dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
+
+        # dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
+        # dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
         def get_docstring_func(row, func_column="test_func_anon"):
             func = row[func_column]
             if func is None:
                 return None
             first_indented_line = func.index("    validate_input_args")
             # insert a docstring before this
-            doc_text = "Example usage: \n" + ">>> test_func(" + row['input'] + ")\n" + ">>> " + row['output']
-            func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+            doc_text = (
+                "Example usage: \n"
+                + ">>> test_func("
+                + row["input"]
+                + ")\n"
+                + ">>> "
+                + row["output"]
+            )
+            func = (
+                func[:first_indented_line]
+                + f'    """\n    {doc_text}\n    """\n'
+                + func[first_indented_line:]
+            )
             return func
-        dataset["test_func_anon_w_docstring"] = dataset.apply(lambda x: get_docstring_func(x, "test_func_anon"), axis=1)
-        dataset["validation_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
-        dataset["description_prompt"] = dataset["test_func_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
+
+        dataset["test_func_anon_w_docstring"] = dataset.apply(
+            lambda x: get_docstring_func(x, "test_func_anon"), axis=1
+        )
+        dataset["validation_prompt"] = dataset["test_func_anon_w_docstring"].apply(
+            lambda x: Prompts.validation_creator + x + "\nValidation Function:\n"
+        )
+        dataset["description_prompt"] = dataset["test_func_anon_w_docstring"].apply(
+            lambda x: Prompts.describe + x + "\nDescription: This function takes in "
+        )
         return {"test": dataset}
-    
+
     @staticmethod
     def load_humaneval(parameters):
         dataset = load_dataset("openai/openai_humaneval", split="test").to_pandas()
@@ -278,52 +300,70 @@ def decode_shift(s: str):
     \"\"\"
     
         """
-        dataset.at[50, 'prompt'] = new_50
+        dataset.at[50, "prompt"] = new_50
         dataset = dataset.drop(index=38).reset_index(drop=True)
+
         def drop_docstrings(prompt):
             while '"""' in prompt:
                 first_index = prompt.index('"""')
                 second_index = prompt.index('"""', first_index + 3)
-                prompt = prompt[:first_index] + prompt[second_index + 3:]
+                prompt = prompt[:first_index] + prompt[second_index + 3 :]
             return prompt
+
         def get_setup(prompt):
             all_funcs = prompt.split("def ")
             if len(all_funcs) <= 1:
                 return ""
             setup = "def ".join(all_funcs[:-1])
             return setup
-        
+
         def last_function(prompt):
             funcs = prompt.split("def ")
             return "def " + funcs[-1]
-        
 
-        dataset['header_only'] = dataset['prompt'].apply(drop_docstrings)
-        dataset['function_only'] = dataset['header_only'].apply(last_function) + dataset['canonical_solution']
-        dataset["test_func_anon"] = dataset["prompt"].apply(get_setup) + dataset['function_only'].apply(anonymize_header)
-        dataset["validation_prompt"] = dataset["test_func_anon"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
-        dataset["description_prompt"] = dataset["prompt"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in takes in ")
+        dataset["header_only"] = dataset["prompt"].apply(drop_docstrings)
+        dataset["function_only"] = (
+            dataset["header_only"].apply(last_function) + dataset["canonical_solution"]
+        )
+        dataset["test_func_anon"] = dataset["prompt"].apply(get_setup) + dataset[
+            "function_only"
+        ].apply(anonymize_header)
+        dataset["validation_prompt"] = dataset["test_func_anon"].apply(
+            lambda x: Prompts.validation_creator + x + "\nValidation Function:\n"
+        )
+        dataset["description_prompt"] = dataset["prompt"].apply(
+            lambda x: Prompts.describe
+            + x
+            + "\nDescription: This function takes in takes in "
+        )
         return {"test": dataset}
 
     @staticmethod
     def load_mbpp(parameters):
         # Muennighoff/mbpp
-        dataset = load_dataset("Muennighoff/mbpp", "sanitized", split="test").to_pandas()
+        dataset = load_dataset(
+            "Muennighoff/mbpp", "sanitized", split="test"
+        ).to_pandas()
         # functionaly the exact same as cruxeval
         dataset = dataset.rename(columns={"code": "test_func"})
         dataset["test_func"] = dataset["test_func"].str.replace(") : \n", "):\n")
-        dataset["test_func"] = dataset["test_func"].str.replace(") :  \n", "):\n")        
-        dataset["test_func"] = dataset["test_func"].str.replace(") :\n", "):\n")        
+        dataset["test_func"] = dataset["test_func"].str.replace(") :  \n", "):\n")
+        dataset["test_func"] = dataset["test_func"].str.replace(") :\n", "):\n")
+
         def last_function(prompt):
             funcs = prompt.split("def ")
             return "def " + funcs[-1]
+
         def get_setup(prompt):
             funcs = prompt.split("def ")
             if len(funcs) <= 1:
                 return ""
             setup = "def ".join(funcs[:-1]) + "\n"
             return setup
-        dataset["test_func_anon"] = dataset["test_func"].apply(get_setup) + dataset["test_func"].apply(last_function).apply(anonymize_header)
+
+        dataset["test_func_anon"] = dataset["test_func"].apply(get_setup) + dataset[
+            "test_func"
+        ].apply(last_function).apply(anonymize_header)
 
         def rewrite_test_list(row):
             func = last_function(row["test_func"])
@@ -336,32 +376,44 @@ def decode_shift(s: str):
                 new_test_list.append(item.replace(func_name, "test_func"))
             test_list = new_test_list
             return test_list
-            # get the 
+            # get the
+
         dataset["test_list"] = dataset.apply(rewrite_test_list, axis=1)
+
         def add_docstring(row, func_column="test_func_anon"):
             if row[func_column] is None:
                 return None
             func = last_function(row[func_column])
-            text = row['prompt'].split("function to ")[-1].strip()
-            test_list = row['test_list']
+            text = row["prompt"].split("function to ")[-1].strip()
+            test_list = row["test_list"]
             text = text + "\nWill end up satisfying:\n" + "\n".join(test_list)
             # in cruxeval, function declaration is always first and there are no type hints
             header, body = func.split("):", 1)
             docstring = f'    """\n    {text}\n    """'
             new_func = header + "):" + docstring + body
             return new_func
-        dataset["validation_prompt"] = dataset.apply(lambda x: add_docstring(x, "test_func_anon"), axis=1).apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")        
-        dataset["description_output"] = dataset["prompt"].apply(lambda x: x.split("function to ")[-1].strip())
+
+        dataset["validation_prompt"] = dataset.apply(
+            lambda x: add_docstring(x, "test_func_anon"), axis=1
+        ).apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
+        dataset["description_output"] = dataset["prompt"].apply(
+            lambda x: x.split("function to ")[-1].strip()
+        )
         return {"test": dataset}
-    
+
     @staticmethod
     def load_code_alpaca(parameters):
         df = load_dataset("sahil2801/CodeAlpaca-20k", split="train").to_pandas()
         df = df[df["output"].str.startswith("def ")].reset_index(drop=True)
-        df = df[df['output'].apply(lambda x: "end" not in x and "{" not in x and "}" not in x)].reset_index(drop=True)
+        df = df[
+            df["output"].apply(
+                lambda x: "end" not in x and "{" not in x and "}" not in x
+            )
+        ].reset_index(drop=True)
         # manually removing index 129 which has a weird function
-        df = df.drop(index=129).reset_index(drop=True)    
+        df = df.drop(index=129).reset_index(drop=True)
         df["test_func_anon"] = df["output"].apply(anonymize_header)
+
         def insert_docstring(row, func_column="test_func_anon"):
             func = row[func_column]
             if func is None:
@@ -369,17 +421,29 @@ def decode_shift(s: str):
             first_indented_line = func.index("    validate_input_args")
             # insert a docstring before this
             doc_text = row["instruction"]
-            func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+            func = (
+                func[:first_indented_line]
+                + f'    """\n    {doc_text}\n    """\n'
+                + func[first_indented_line:]
+            )
             return func
+
         df["test_function_anon_w_docstring"] = df.apply(insert_docstring, axis=1)
-        df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
-        df["description_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
+        df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(
+            lambda x: Prompts.validation_creator + x + "\nValidation Function:\n"
+        )
+        df["description_prompt"] = df["test_function_anon_w_docstring"].apply(
+            lambda x: Prompts.describe + x + "\nDescription: This function takes in "
+        )
         return {"train": df}
-    
+
     @staticmethod
     def load_magic_coder(parameters):
-        df = load_dataset("ise-uiuc/Magicoder-OSS-Instruct-75K", split="train").to_pandas()
-        df = df[df['lang'] == "python"].reset_index(drop=True)
+        df = load_dataset(
+            "ise-uiuc/Magicoder-OSS-Instruct-75K", split="train"
+        ).to_pandas()
+        df = df[df["lang"] == "python"].reset_index(drop=True)
+
         def get_func(x):
             if x.count("```python") != 1:
                 return None
@@ -393,12 +457,16 @@ def decode_shift(s: str):
             if "class " in x:
                 return None
             return x
-        df['func'] = df['solution'].apply(get_func)
+
+        df["func"] = df["solution"].apply(get_func)
         original_length = len(df)
-        df = df[~df['func'].isna()].reset_index(drop=True)
+        df = df[~df["func"].isna()].reset_index(drop=True)
         new_length = len(df)
-        log_info(f"MagicCoder: Removed {original_length - new_length}/{original_length} entries without a valid single python function.")
+        log_info(
+            f"MagicCoder: Removed {original_length - new_length}/{original_length} entries without a valid single python function."
+        )
         df["test_func_anon"] = df["func"].apply(anonymize_header)
+
         def insert_docstring(row, func_column="test_func_anon"):
             func = row[func_column]
             if func is None:
@@ -406,18 +474,36 @@ def decode_shift(s: str):
             first_indented_line = func.index("    validate_input_args")
             # insert a docstring before this
             doc_text = row["problem"]
-            func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+            func = (
+                func[:first_indented_line]
+                + f'    """\n    {doc_text}\n    """\n'
+                + func[first_indented_line:]
+            )
             return func
-        df["test_function_anon_w_docstring"] = df.apply(insert_docstring, axis=1)
-        df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
 
-        df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(lambda x: Prompts.describe + x + "\nDescription: This function takes in ")
+        df["test_function_anon_w_docstring"] = df.apply(insert_docstring, axis=1)
+        df["validation_prompt"] = df["test_function_anon_w_docstring"].apply(
+            lambda x: Prompts.validation_creator + x + "\nValidation Function:\n"
+        )
+
+        df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(
+            lambda x: Prompts.describe + x + "\nDescription: This function takes in "
+        )
         df = df.sample(frac=0.75, random_state=42).reset_index(drop=True)
         return {"train": df}
-        
-    
+
     @staticmethod
-    def call_infer(run_name, dataset_name, split, input_file, output_file, input_column, output_column, max_new_tokens, parameters):
+    def call_infer(
+        run_name,
+        dataset_name,
+        split,
+        input_file,
+        output_file,
+        input_column,
+        output_column,
+        max_new_tokens,
+        parameters,
+    ):
         model = parameters["benchmark_creation_model"]
         open_ai_batch_name = ""
         if "gpt" in model:
@@ -432,71 +518,127 @@ def decode_shift(s: str):
                 df.drop("output_logits", axis=1, inplace=True)
             df.to_json(output_file, orient="records", lines=True)
         except:
-            log_warn(f"Output file {output_file} not found after inference command.", parameters=parameters)
+            log_warn(
+                f"Output file {output_file} not found after inference command.",
+                parameters=parameters,
+            )
             return None
         return df
-    
+
     @staticmethod
     def generate_validation_code(dataset_name, split, parameters):
         input_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc.jsonl"
-        output_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_validation_output.jsonl"        
+        output_file = (
+            parameters["data_dir"]
+            + f"/raw/{dataset_name}/{split}_proc_validation_output.jsonl"
+        )
         input_column = "validation_prompt"
         output_column = "validation_output"
         max_new_tokens = 300
-        return RawLoaders.call_infer(run_name="validation-code", dataset_name=dataset_name, split=split, input_file=input_file, output_file=output_file, input_column=input_column, output_column=output_column, max_new_tokens=max_new_tokens, parameters=parameters)
-
+        return RawLoaders.call_infer(
+            run_name="validation-code",
+            dataset_name=dataset_name,
+            split=split,
+            input_file=input_file,
+            output_file=output_file,
+            input_column=input_column,
+            output_column=output_column,
+            max_new_tokens=max_new_tokens,
+            parameters=parameters,
+        )
 
     @staticmethod
     def generate_description(dataset_name, split, parameters):
-        input_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_validation_output.jsonl"
-        output_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_description_output.jsonl"        
+        input_file = (
+            parameters["data_dir"]
+            + f"/raw/{dataset_name}/{split}_proc_validation_output.jsonl"
+        )
+        output_file = (
+            parameters["data_dir"]
+            + f"/raw/{dataset_name}/{split}_proc_description_output.jsonl"
+        )
         input_column = "description_prompt"
         output_column = "description_output"
         max_new_tokens = 600
-        return RawLoaders.call_infer(run_name="description", dataset_name=dataset_name, split=split, input_file=input_file, output_file=output_file, input_column=input_column, output_column=output_column, max_new_tokens=max_new_tokens, parameters=parameters)                
+        return RawLoaders.call_infer(
+            run_name="description",
+            dataset_name=dataset_name,
+            split=split,
+            input_file=input_file,
+            output_file=output_file,
+            input_column=input_column,
+            output_column=output_column,
+            max_new_tokens=max_new_tokens,
+            parameters=parameters,
+        )
 
 
 class MidLoader:
     @staticmethod
     def parse_validation(df):
         df["test_func_validated"] = None
-        df["validation_output"] = df["validation_output"].apply(lambda x: x[0] if isinstance(x, list) else x)
-        for index, row in tqdm(df.iterrows(), total=len(df), desc="Parsing validation code"):
+        df["validation_output"] = df["validation_output"].apply(
+            lambda x: x[0] if isinstance(x, list) else x
+        )
+        for index, row in tqdm(
+            df.iterrows(), total=len(df), desc="Parsing validation code"
+        ):
             validation_output = row["validation_output"]
             if "def validate_input_args(" in validation_output:
-                validation_code =  "def validate_input_args(" + validation_output.split("def validate_input_args(")[1]
+                validation_code = (
+                    "def validate_input_args("
+                    + validation_output.split("def validate_input_args(")[1]
+                )
                 if "return" in validation_code:
                     validation_code = validation_code.split("return")[0] + "return"
                 else:
                     validation_code = None
             else:
-                validation_code = None      
+                validation_code = None
             if validation_code is None:
-                log_warn(f"Could not generate validation code for index {index}\n" + validation_output, parameters=loaded_parameters)
+                log_warn(
+                    f"Could not generate validation code for index {index}\n"
+                    + validation_output,
+                    parameters=loaded_parameters,
+                )
                 continue
             df.at[index, "validation_code"] = validation_code
-            test_func_str = move_imports_top(validation_code + "\n" + row["test_func_anon"]) # Should be able to exec this now
+            test_func_str = move_imports_top(
+                validation_code + "\n" + row["test_func_anon"]
+            )  # Should be able to exec this now
             try:
                 exec(test_func_str)
                 df.at[index, "test_func_validated"] = test_func_str
             except Exception as e:
-                log_warn(f"Could not exec validated function for index {index}: {str(e)}", parameters=loaded_parameters)
+                log_warn(
+                    f"Could not exec validated function for index {index}: {str(e)}",
+                    parameters=loaded_parameters,
+                )
         # drop test_func_validated Nans
         original_length = len(df)
         df = df[~df["test_func_validated"].isna()].reset_index(drop=True)
         new_length = len(df)
-        log_info(f"Removed {original_length - new_length}/{original_length} invalid validation_code entries. Now with {new_length} entries...")
-        return df       
+        log_info(
+            f"Removed {original_length - new_length}/{original_length} invalid validation_code entries. Now with {new_length} entries..."
+        )
+        return df
 
     @staticmethod
     def parse_description(df):
         df["description"] = None
         print(df.columns)
-        df["description_output"] = df["description_output"].apply(lambda x: x[0] if isinstance(x, list) else x)        
-        for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating descriptions"):
+        df["description_output"] = df["description_output"].apply(
+            lambda x: x[0] if isinstance(x, list) else x
+        )
+        for index, row in tqdm(
+            df.iterrows(), total=len(df), desc="Generating descriptions"
+        ):
             description = row["description_output"]
             if description.strip() == "":
-                log_warn(f"Could not generate description for index {index}", parameters=loaded_parameters)
+                log_warn(
+                    f"Could not generate description for index {index}",
+                    parameters=loaded_parameters,
+                )
                 description = None
             if "\n\n" in description:
                 description = description.split("\n\n")[0]
@@ -507,9 +649,11 @@ class MidLoader:
         original_length = len(df)
         df = df[~df["description"].isna()].reset_index(drop=True)
         new_length = len(df)
-        log_info(f"Removed {original_length - new_length}/{original_length} invalid description entries. Now with {new_length} entries...")
-        return df       
-    
+        log_info(
+            f"Removed {original_length - new_length}/{original_length} invalid description entries. Now with {new_length} entries..."
+        )
+        return df
+
     @staticmethod
     def parse_both(df):
         return MidLoader.parse_description(MidLoader.parse_validation(df))
@@ -519,7 +663,7 @@ class MidLoader:
         data_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
         splits = {}
         files = os.listdir(data_dir)
-        for file in files: 
+        for file in files:
             if file.endswith("_proc_description_output.jsonl"):
                 split_name = file.replace("_proc_description_output.jsonl", "")
                 df = pd.read_json(data_dir + file, lines=True)
@@ -528,33 +672,52 @@ class MidLoader:
                 splits[split_name] = df
         return splits
 
-
     @staticmethod
     def load_cruxeval(parameters):
         dataset = MidLoader.get_split_dfs(parameters, "cruxeval")["test"]
+
         def get_docstring_func(row, func_column="test_func_anon"):
             func = row[func_column]
             if func is None:
                 return None
             first_indented_line = func.index("    validate_input_args")
             # insert a docstring before this
-            doc_text = "Example usage: \n" + ">>> test_func(" + row['input'] + ")\n" + ">>> " + row['output']
-            func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+            doc_text = (
+                "Example usage: \n"
+                + ">>> test_func("
+                + row["input"]
+                + ")\n"
+                + ">>> "
+                + row["output"]
+            )
+            func = (
+                func[:first_indented_line]
+                + f'    """\n    {doc_text}\n    """\n'
+                + func[first_indented_line:]
+            )
             return func
-        dataset["test_func_validated_w_docstring"] = dataset.apply(lambda x: get_docstring_func(x, "test_func_validated"), axis=1)
-        dataset["example_prompt"] = dataset["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
+
+        dataset["test_func_validated_w_docstring"] = dataset.apply(
+            lambda x: get_docstring_func(x, "test_func_validated"), axis=1
+        )
+        dataset["example_prompt"] = dataset["test_func_validated_w_docstring"].apply(
+            lambda x: Prompts.example_creator + x if x is not None else None
+        )
         return {"test": dataset}
-    
+
     @staticmethod
     def load_humaneval(parameters):
         dataset = MidLoader.get_split_dfs(parameters, "humaneval")["test"]
-        dataset["example_prompt"] = dataset["test_func_validated"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
+        dataset["example_prompt"] = dataset["test_func_validated"].apply(
+            lambda x: Prompts.example_creator + x if x is not None else None
+        )
         return {"test": dataset}
 
     @staticmethod
     def load_mbpp(parameters):
         # Muennighoff/mbpp
         dataset = MidLoader.get_split_dfs(parameters, "mbpp")["test"]
+
         def last_function(prompt):
             funcs = prompt.split("def ")
             return "def " + funcs[-1]
@@ -563,20 +726,24 @@ class MidLoader:
             if row[func_column] is None:
                 return None
             func = last_function(row[func_column])
-            text = row['prompt'].split("function to ")[-1].strip()
-            test_list = row['test_list']
+            text = row["prompt"].split("function to ")[-1].strip()
+            test_list = row["test_list"]
             text = text + "\nWill end up satisfying:\n" + "\n".join(test_list)
             # in cruxeval, function declaration is always first and there are no type hints
             header, body = func.split("):", 1)
             docstring = f'    """\n    {text}\n    """'
             new_func = header + "):" + docstring + body
             return new_func
-        dataset["example_prompt"] = dataset.apply(lambda x: add_docstring(x, "test_func_validated"), axis=1).apply(lambda x: Prompts.example_creator + x if x is not None else None)
+
+        dataset["example_prompt"] = dataset.apply(
+            lambda x: add_docstring(x, "test_func_validated"), axis=1
+        ).apply(lambda x: Prompts.example_creator + x if x is not None else None)
         return {"test": dataset}
-    
+
     @staticmethod
     def load_code_alpaca(parameters):
         df = MidLoader.get_split_dfs(parameters, "code_alpaca")["train"]
+
         def insert_docstring(row, func_column="test_func_anon"):
             func = row[func_column]
             if func is None:
@@ -584,15 +751,25 @@ class MidLoader:
             first_indented_line = func.index("    validate_input_args")
             # insert a docstring before this
             doc_text = row["instruction"]
-            func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+            func = (
+                func[:first_indented_line]
+                + f'    """\n    {doc_text}\n    """\n'
+                + func[first_indented_line:]
+            )
             return func
-        df["test_func_validated_w_docstring"] = df.apply(lambda x: insert_docstring(x, "test_func_validated"), axis=1)
-        df["example_prompt"] = df["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
+
+        df["test_func_validated_w_docstring"] = df.apply(
+            lambda x: insert_docstring(x, "test_func_validated"), axis=1
+        )
+        df["example_prompt"] = df["test_func_validated_w_docstring"].apply(
+            lambda x: Prompts.example_creator + x if x is not None else None
+        )
         return {"train": df}
-    
+
     @staticmethod
     def load_magic_coder(parameters):
         df = MidLoader.get_split_dfs(parameters, "magic_coder")["train"]
+
         def insert_docstring(row, func_column="test_func_anon"):
             func = row[func_column]
             if func is None:
@@ -600,32 +777,56 @@ class MidLoader:
             first_indented_line = func.index("    validate_input_args")
             # insert a docstring before this
             doc_text = row["problem"]
-            func = func[:first_indented_line] + f'    """\n    {doc_text}\n    """\n' + func[first_indented_line:]
+            func = (
+                func[:first_indented_line]
+                + f'    """\n    {doc_text}\n    """\n'
+                + func[first_indented_line:]
+            )
             return func
-        df["test_func_validated_w_docstring"] = df.apply(lambda x: insert_docstring(x, "test_func_validated"), axis=1)
-        df["example_prompt"] = df["test_func_validated_w_docstring"].apply(lambda x: Prompts.example_creator + x if x is not None else None)
+
+        df["test_func_validated_w_docstring"] = df.apply(
+            lambda x: insert_docstring(x, "test_func_validated"), axis=1
+        )
+        df["example_prompt"] = df["test_func_validated_w_docstring"].apply(
+            lambda x: Prompts.example_creator + x if x is not None else None
+        )
         return {"train": df}
-        
+
     @staticmethod
     def generate_examples(dataset_name, split, parameters):
-        input_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_mid.jsonl"
-        output_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_example_output.jsonl"        
+        input_file = (
+            parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc_mid.jsonl"
+        )
+        output_file = (
+            parameters["data_dir"]
+            + f"/raw/{dataset_name}/{split}_proc_example_output.jsonl"
+        )
         input_column = "example_prompt"
         output_column = "example_output"
         max_new_tokens = 1200
-        return RawLoaders.call_infer(run_name="examples", dataset_name=dataset_name, split=split, input_file=input_file, output_file=output_file, input_column=input_column, output_column=output_column, max_new_tokens=max_new_tokens, parameters=parameters)                        
-
+        return RawLoaders.call_infer(
+            run_name="examples",
+            dataset_name=dataset_name,
+            split=split,
+            input_file=input_file,
+            output_file=output_file,
+            input_column=input_column,
+            output_column=output_column,
+            max_new_tokens=max_new_tokens,
+            parameters=parameters,
+        )
 
 
 class RunTestFunc:
     """
     A class to run a test function defined in code.
     """
+
     def __init__(self, func_code: str, timeout=0.5):
         """
         Initializes the RunTestFunc with the given function code. Is not safe (i.e. runs exec on func_code, unsure you do not run malicious code through here by mistake).
 
-        :param func_code: The code defining the test function. Should come from the provided dataset. 
+        :param func_code: The code defining the test function. Should come from the provided dataset.
         :type func_code: str
         :param timeout: The maximum time in seconds to allow the function to run.
         :type timeout: float
@@ -650,23 +851,27 @@ class RunTestFunc:
     def run_test(self, *args):
         self.access_counter += 1
         self.attempted_inputs.append(args)
-        
+
         # Use a Queue to get the return value back from the child process
         queue = multiprocessing.Queue()
-        p = multiprocessing.Process(target=self.worker, args=(self.test_func, args, queue))
-        
+        p = multiprocessing.Process(
+            target=self.worker, args=(self.test_func, args, queue)
+        )
+
         p.start()
-        
+
         # Wait
         p.join(timeout=self.timeout)
-        
+
         if p.is_alive():
             # If the process is still running after 15s, kill it
             p.terminate()
             p.join()
-            self.recieved_outputs.append((None, f"Timeout: Function execution exceeded {self.timeout} seconds"))
+            self.recieved_outputs.append(
+                (None, f"Timeout: Function execution exceeded {self.timeout} seconds")
+            )
             return None, f"Timeout: Function execution exceeded {self.timeout} seconds"
-        
+
         # If it finished, grab the result from the queue
         if not queue.empty():
             result = queue.get()
@@ -674,31 +879,36 @@ class RunTestFunc:
             return result
         self.recieved_outputs.append((None, "Unknown error during execution"))
         return None, "Unknown error during execution"
-    
+
     def run_test_str(self, args_str: str):
         """
         Runs the test function with the given arguments in string form.
-        
+
         :param args_str: Arguments in string form to pass to the test function.
         :type args_str: str
         :return: A tuple (return_value, error_message). If there is no error, error_message is None.
         :rtype: tuple
         """
         try:
-            args = literal_eval(args_str) # for safety
+            args = literal_eval(args_str)  # for safety
         except Exception as e:
             return None, "Invalid input args, is not valid python syntax"
         if not isinstance(args, tuple) and not isinstance(args, list):
-            args = (args,) # for single argument functions
+            args = (args,)  # for single argument functions
         return self.run_test(*args)
+
 
 class FilteredLoader:
     @staticmethod
     def parse_examples(df):
         df["examples"] = None
         df["n_examples"] = None
-        df["example_output"] = df["example_output"].apply(lambda x: x[0] if isinstance(x, list) else x)                
-        for index, row in tqdm(df.iterrows(), total=len(df), desc="Generating example inputs"):
+        df["example_output"] = df["example_output"].apply(
+            lambda x: x[0] if isinstance(x, list) else x
+        )
+        for index, row in tqdm(
+            df.iterrows(), total=len(df), desc="Generating example inputs"
+        ):
             example_code = row["example_output"]
             df.at[index, "example_output"] = example_code
             examples = []
@@ -706,17 +916,18 @@ class FilteredLoader:
                 line = line.strip()
                 if line.startswith("- "):
                     line = line[2:].strip()
-                if line.startswith("(") and line.endswith(")"):                    
+                if line.startswith("(") and line.endswith(")"):
                     examples.append(line)
-            examples = list(set(examples)) # unique only                    
+            examples = list(set(examples))  # unique only
             df.at[index, "examples"] = examples
         # drop if there are less than 5 examples overall
         original_length = len(df)
         df = df[df["examples"].apply(lambda x: len(x) >= 5)].reset_index(drop=True)
         new_length = len(df)
-        log_info(f"Removed {original_length - new_length}/{original_length} insufficient example entries. Now with {new_length} entries...")
+        log_info(
+            f"Removed {original_length - new_length}/{original_length} insufficient example entries. Now with {new_length} entries..."
+        )
         return df
-
 
     @staticmethod
     def train_test_split(inputs, outputs):
@@ -738,10 +949,10 @@ class FilteredLoader:
                     test_inputs.append(candidate_input)
                     test_outputs.append(candidate_output)
                     continue
-                # pass it over if the existing train input has an identity mapping and this is also an identity mapping. 
+                # pass it over if the existing train input has an identity mapping and this is also an identity mapping.
                 existing_identity = False
                 candidate_identity = False
-                try: # might not be valid
+                try:  # might not be valid
                     for train_input, train_output in zip(train_inputs, train_outputs):
                         if train_input == train_output:
                             existing_identity = True
@@ -758,8 +969,6 @@ class FilteredLoader:
                     train_inputs.append(candidate_input)
                     train_outputs.append(candidate_output)
         return train_inputs, train_outputs, test_inputs, test_outputs
-
-
 
     @staticmethod
     def filter_examples(test_func_code: str, examples: list):
@@ -780,33 +989,38 @@ class FilteredLoader:
             except Exception as e:
                 pass
         if len(working_inputs) < 5:
-            return True, [], [], [], [] # Not enough to make a decent train set
-        train_inputs, train_outputs, test_inputs, test_outputs = FilteredLoader.train_test_split(working_inputs, working_outputs)
+            return True, [], [], [], []  # Not enough to make a decent train set
+        train_inputs, train_outputs, test_inputs, test_outputs = (
+            FilteredLoader.train_test_split(working_inputs, working_outputs)
+        )
         if len(train_inputs) < 2:
-            return True, [], [], [], [] # Not enough diverse train examples
+            return True, [], [], [], []  # Not enough diverse train examples
         return True, train_inputs, train_outputs, test_inputs, test_outputs
-
 
     @staticmethod
     def filter_annotate_dataset(df):
         random.seed(42)
         # dataset has columns: test_func_validated, examples, more_examples, description
         df["train_inputs"] = None
-        #df["train_outputs"] = None
+        # df["train_outputs"] = None
         df["test_inputs"] = None
-        #df["test_outputs"] = None
+        # df["test_outputs"] = None
         df["execable"] = None
-        for index, row in tqdm(df.iterrows(), total=len(df), desc="Filtering and annotating dataset"):
+        for index, row in tqdm(
+            df.iterrows(), total=len(df), desc="Filtering and annotating dataset"
+        ):
             test_func_code = row["test_func_validated"]
             all_examples = list(set(row["examples"]))
             # shuffle all examples
             random.shuffle(all_examples)
-            execable, train_inputs, train_outputs, test_inputs, test_outputs = FilteredLoader.filter_examples(test_func_code, all_examples)
+            execable, train_inputs, train_outputs, test_inputs, test_outputs = (
+                FilteredLoader.filter_examples(test_func_code, all_examples)
+            )
             # first 2 filtered inputs/outputs are train, rest are test
             df.at[index, "train_inputs"] = train_inputs
-            #df.at[index, "train_outputs"] = train_outputs
+            # df.at[index, "train_outputs"] = train_outputs
             df.at[index, "test_inputs"] = test_inputs
-            #df.at[index, "test_outputs"] = test_outputs
+            # df.at[index, "test_outputs"] = test_outputs
             df.at[index, "execable"] = execable
         # take out not execable rows
         original_length = len(df)
@@ -814,16 +1028,32 @@ class FilteredLoader:
         # take out the rows with empty train_inputs or test_inputs
         df = df[(df["train_inputs"].apply(len) >= 2)].reset_index(drop=True)
         cleaned_length = len(df)
-        log_info(f"Filtered dataset: removed {original_length - cleaned_length}/{original_length} rows with non-execable test functions or insufficient examples", parameters=loaded_parameters)
+        log_info(
+            f"Filtered dataset: removed {original_length - cleaned_length}/{original_length} rows with non-execable test functions or insufficient examples",
+            parameters=loaded_parameters,
+        )
         return df
 
 
-
-
 @click.command()
-@click.option("--dataset_name", required=True, help="The name of the dataset to load from the Hugging Face Hub.", type=click.Choice(TEST_DATASETS + TRAIN_DATASETS))
-@click.option("--execute_inference", default=True, help="Whether to execute inference during processing.", type=bool)
-@click.option("--mid_step", default=True, help="Whether to execute the mid step processing after raw processing.", type=bool)
+@click.option(
+    "--dataset_name",
+    required=True,
+    help="The name of the dataset to load from the Hugging Face Hub.",
+    type=click.Choice(TEST_DATASETS + TRAIN_DATASETS),
+)
+@click.option(
+    "--execute_inference",
+    default=True,
+    help="Whether to execute inference during processing.",
+    type=bool,
+)
+@click.option(
+    "--mid_step",
+    default=True,
+    help="Whether to execute the mid step processing after raw processing.",
+    type=bool,
+)
 @click.pass_obj
 def process_raw(parameters, dataset_name, execute_inference, mid_step):
     save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
@@ -845,25 +1075,43 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
         csv = data_splits[data_split]
         csv.to_json(f"{save_dir}/{data_split}_proc.jsonl", orient="records", lines=True)
         if execute_inference:
-            df = RawLoaders.generate_validation_code(dataset_name, data_split, parameters)
+            df = RawLoaders.generate_validation_code(
+                dataset_name, data_split, parameters
+            )
             if dataset_name == "mbpp":
                 # save this file to the description_output directly
-                df.to_json(f"{save_dir}/{data_split}_proc_description_output.jsonl", orient="records", lines=True)
-                log_info(f"Completed raw processing for dataset {dataset_name} split {data_split}",
-                            parameters=parameters)
+                df.to_json(
+                    f"{save_dir}/{data_split}_proc_description_output.jsonl",
+                    orient="records",
+                    lines=True,
+                )
+                log_info(
+                    f"Completed raw processing for dataset {dataset_name} split {data_split}",
+                    parameters=parameters,
+                )
                 continue
             else:
                 if df is not None:
-                    df = RawLoaders.generate_description(dataset_name, data_split, parameters)
+                    df = RawLoaders.generate_description(
+                        dataset_name, data_split, parameters
+                    )
                 if df is not None:
-                    log_info(f"Completed raw processing for dataset {dataset_name} split {data_split}", parameters=parameters)
+                    log_info(
+                        f"Completed raw processing for dataset {dataset_name} split {data_split}",
+                        parameters=parameters,
+                    )
                 else:
-                    log_info(f"Skipped inference for dataset {dataset_name} split {data_split}", parameters=parameters)
-
+                    log_info(
+                        f"Skipped inference for dataset {dataset_name} split {data_split}",
+                        parameters=parameters,
+                    )
 
     if execute_inference and mid_step:
         if df is not None:
-            log_info(f"Executing mid step processing for dataset {dataset_name}", parameters=parameters)
+            log_info(
+                f"Executing mid step processing for dataset {dataset_name}",
+                parameters=parameters,
+            )
             if dataset_name == "humaneval":
                 data_splits = MidLoader.load_humaneval(parameters)
             elif dataset_name == "cruxeval":
@@ -875,19 +1123,36 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
             elif dataset_name == "magic_coder":
                 data_splits = MidLoader.load_magic_coder(parameters)
             else:
-                log_error(f"Dataset {dataset_name} not recognized.", parameters=parameters)
+                log_error(
+                    f"Dataset {dataset_name} not recognized.", parameters=parameters
+                )
             for data_split in data_splits:
                 csv = data_splits[data_split]
-                csv.to_json(f"{save_dir}/{data_split}_proc_mid.jsonl", orient="records", lines=True)
+                csv.to_json(
+                    f"{save_dir}/{data_split}_proc_mid.jsonl",
+                    orient="records",
+                    lines=True,
+                )
                 df = MidLoader.generate_examples(dataset_name, data_split, parameters)
                 if df is not None:
-                    log_info(f"Completed mid step processing for dataset {dataset_name} split {data_split}", parameters=parameters)
+                    log_info(
+                        f"Completed mid step processing for dataset {dataset_name} split {data_split}",
+                        parameters=parameters,
+                    )
         else:
-            log_info(f"Skipped mid step processing for dataset {dataset_name}", parameters=parameters)
+            log_info(
+                f"Skipped mid step processing for dataset {dataset_name}",
+                parameters=parameters,
+            )
 
 
 @click.command()
-@click.option("--dataset_name", required=True, help="The name of the dataset to load from the Hugging Face Hub.", type=click.Choice(TEST_DATASETS + TRAIN_DATASETS))
+@click.option(
+    "--dataset_name",
+    required=True,
+    help="The name of the dataset to load from the Hugging Face Hub.",
+    type=click.Choice(TEST_DATASETS + TRAIN_DATASETS),
+)
 @click.pass_obj
 def process_final(parameters, dataset_name):
     load_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
@@ -900,20 +1165,34 @@ def process_final(parameters, dataset_name):
     for file in files:
         if file.endswith("proc_example_output.jsonl"):
             split_name = file.replace("proc_example_output.jsonl", "")
-            split_dict[split_name] = FilteredLoader.parse_examples(pd.read_json(f"{load_dir}/{file}", lines=True))
+            split_dict[split_name] = FilteredLoader.parse_examples(
+                pd.read_json(f"{load_dir}/{file}", lines=True)
+            )
     if split_dict == {}:
-        log_error(f"No cleaned jsonl files found in {load_dir} for dataset {dataset_name}", parameters=parameters)
+        log_error(
+            f"No cleaned jsonl files found in {load_dir} for dataset {dataset_name}",
+            parameters=parameters,
+        )
     for split_name in split_dict:
         df = split_dict[split_name]
         df_filtered = FilteredLoader.filter_annotate_dataset(df)
-        df_filtered = df_filtered[["test_func_validated", "description", "train_inputs", "test_inputs"]]
-        df_filtered.to_json(f"{save_dir}/{split_name}_filtered.jsonl", orient="records", lines=True)
-        log_info(f"Saved final filtered dataset with {len(df_filtered)} rows for {dataset_name} split {split_name} to {save_dir}/{split_name}_final.jsonl", parameters=parameters)
+        df_filtered = df_filtered[
+            ["test_func_validated", "description", "train_inputs", "test_inputs"]
+        ]
+        df_filtered.to_json(
+            f"{save_dir}/{split_name}_filtered.jsonl", orient="records", lines=True
+        )
+        log_info(
+            f"Saved final filtered dataset with {len(df_filtered)} rows for {dataset_name} split {split_name} to {save_dir}/{split_name}_final.jsonl",
+            parameters=parameters,
+        )
         dataset = Dataset.from_pandas(df_filtered)
-        dataset.push_to_hub(f"{huggingface_hub_username}/{huggingface_hub_repo_name}", private=False, split=split_name, config_name=dataset_name)
-
-        
-
+        dataset.push_to_hub(
+            f"{huggingface_hub_username}/{huggingface_hub_repo_name}",
+            private=False,
+            split=split_name,
+            config_name=dataset_name,
+        )
 
 
 @click.group()
