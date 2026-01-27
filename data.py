@@ -1034,6 +1034,28 @@ class FilteredLoader:
         )
         return df
 
+    def make_train_dataset(df):
+        def get_header(func_code):
+            header_start = func_code.index("def test_func(")
+            header_end = func_code.index("\n", header_start)
+            func_header = func_code[header_start:header_end]
+            return func_header
+
+        def make_prompt(row):
+            func_header = get_header(row["test_func_validated"])
+            runner = RunTestFunc(row["test_func_validated"])
+            prompt = "You are given the following function signature:\n"
+            prompt += func_header + "\n"
+            prompt += "Based on the following examples of inputs and outputs, provide a description of what this function does.\n"
+            for train_input in row["train_inputs"]:
+                prompt += f"Input: {train_input}\n"
+                prompt += f"Output: {runner.run_test_str(train_input)[0]}\n"
+            prompt += "Description: "
+            return prompt
+
+        df["direct_prompt"] = df.apply(make_prompt, axis=1)
+        return df
+
 
 @click.command()
 @click.option(
@@ -1176,8 +1198,15 @@ def process_final(parameters, dataset_name):
     for split_name in split_dict:
         df = split_dict[split_name]
         df_filtered = FilteredLoader.filter_annotate_dataset(df)
+        df_filtered = FilteredLoader.make_train_dataset(df_filtered)
         df_filtered = df_filtered[
-            ["test_func_validated", "description", "train_inputs", "test_inputs"]
+            [
+                "test_func_validated",
+                "description",
+                "train_inputs",
+                "test_inputs",
+                "direct_prompt",
+            ]
         ]
         df_filtered.to_json(
             f"{save_dir}/{split_name}_filtered.jsonl", orient="records", lines=True
