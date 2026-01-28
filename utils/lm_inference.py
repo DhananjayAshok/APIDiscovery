@@ -14,7 +14,7 @@ class ModelInterface(ABC):
 
 
 class OpenAIModel(ModelInterface):
-    seconds_per_query = (60 / 20) + 0.01
+    seconds_per_query = (15) + 0.01
 
     def __init__(self, model_name: str):
         self.model_name = model_name

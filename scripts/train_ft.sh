@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source configs/config.sh
+source configs/config.env
 # Default values for optional arguments
 declare -A ARGS
 # make optional arguments: b: batch_size, e: epochs
@@ -60,7 +60,7 @@ for key in "${!ARGS[@]}"; do
 done
 
 save_name="${ARGS["m"]#*/}"
-input_file="$storage_dir/data/final/${ARGS["d"]}/train_filtered.jsonl"
+input_file="$storage_dir/data/final/${ARGS["d"]}/train__filtered.csv"
 
 
 bash scripts/llm_utils.sh python train.py --training_kind sft --model_name ${ARGS["m"]} --output_dir $storage_dir/models/$save_name-${ARGS["d"]} \
@@ -70,7 +70,6 @@ bash scripts/llm_utils.sh python train.py --training_kind sft --model_name ${ARG
     --learning_rate 2e-5 \
     --logging_strategy steps --logging_steps 100 \
     --eval_strategy epoch --eval_steps 0.5 \
-    --lora_target_modules k_proj,v_proj,o_proj \
     --save_strategy epoch --save_steps 0.5 \
     --early_stopping_patience 3 \
     --load_best_model_at_end True \

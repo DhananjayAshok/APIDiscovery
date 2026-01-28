@@ -1211,8 +1211,11 @@ def process_final(parameters, dataset_name):
         df_filtered.to_json(
             f"{save_dir}/{split_name}_filtered.jsonl", orient="records", lines=True
         )
+        df_filtered.to_csv(
+            f"{save_dir}/{split_name}_filtered.csv", index=False
+        )
         log_info(
-            f"Saved final filtered dataset with {len(df_filtered)} rows for {dataset_name} split {split_name} to {save_dir}/{split_name}_final.jsonl",
+            f"Saved final filtered dataset with {len(df_filtered)} rows for {dataset_name} split {split_name} to {save_dir}/{split_name}_filtered.jsonl",
             parameters=parameters,
         )
         dataset = Dataset.from_pandas(df_filtered)
