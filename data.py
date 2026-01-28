@@ -665,7 +665,9 @@ class MidLoader:
         files = os.listdir(data_dir)
         for file in files:
             if file.endswith("_proc_description_output.jsonl"):
-                split_name = file.replace("_proc_description_output.jsonl", "")
+                split_name = file.replace("_proc_description_output.jsonl", "").replace(
+                    "_", ""
+                )
                 df = pd.read_json(data_dir + file, lines=True)
                 log_info(f"Parsing File | {dataset_name}: {file}")
                 df = MidLoader.parse_both(df)
@@ -1078,6 +1080,7 @@ class FilteredLoader:
 )
 @click.pass_obj
 def process_raw(parameters, dataset_name, execute_inference, mid_step):
+    split_no = 5
     save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
     os.makedirs(save_dir, exist_ok=True)
     log_info(f"Processing raw dataset {dataset_name}", parameters=parameters)
@@ -1097,9 +1100,46 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
         csv = data_splits[data_split]
         csv.to_json(f"{save_dir}/{data_split}_proc.jsonl", orient="records", lines=True)
         if execute_inference:
-            df = RawLoaders.generate_validation_code(
-                dataset_name, data_split, parameters
-            )
+            if (
+                dataset_name in TEST_DATASETS
+            ):  # then they are small enough to do in one batch
+                df = RawLoaders.generate_validation_code(
+                    dataset_name, data_split, parameters
+                )
+            else:
+                # then we want to split them into 5, run each one separately, and concat
+                csv_length = len(csv)
+                dfs_compiled = []
+                df = None
+                for i in range(len(split_no)):
+                    save_dir = parameters["data_dir"] + f"/raw/{dataset_name}_{i}/"
+                    start_index = int(i * csv_length / split_no)
+                    end_index = int((i + 1) * csv_length / split_no)
+                    csv_split = csv.iloc[start_index:end_index]
+                    csv_split.to_json(
+                        f"{save_dir}/{data_split}_proc.jsonl",
+                        orient="records",
+                        lines=True,
+                    )
+                    df_split = RawLoaders.generate_validation_code(
+                        dataset_name + f"_{i}", data_split, parameters
+                    )
+                    if df_split is None:
+                        log_info(
+                            f"Split {i} must still be running inference. Skipping the rest."
+                        )
+                        df = None
+                        break
+                    dfs_compiled.append(df_split)
+                if len(dfs_compiled) == split_no:
+                    df = pd.concat(dfs_compiled).reset_index(drop=True)
+                    save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
+                    df.to_json(
+                        f"{save_dir}/{data_split}_proc_validation_output.jsonl",
+                        lines=True,
+                        orient="records",
+                    )
+
             if dataset_name == "mbpp":
                 # save this file to the description_output directly
                 df.to_json(
@@ -1114,9 +1154,36 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
                 continue
             else:
                 if df is not None:
-                    df = RawLoaders.generate_description(
-                        dataset_name, data_split, parameters
-                    )
+                    if dataset_name in TEST_DATASETS:
+                        df = RawLoaders.generate_description(
+                            dataset_name, data_split, parameters
+                        )
+                    else:
+                        csv_length = len(df)
+                        dfs_compiled = []
+                        df_out = None
+                        for i in range(len(split_no)):
+                            df_split = RawLoaders.generate_description(
+                                dataset_name + f"_{i}", data_split, parameters
+                            )
+                            if df_split is None:
+                                log_info(
+                                    f"Split {i} must still be running inference. Skipping the rest."
+                                )
+                                df_out = None
+                                break
+                            dfs_compiled.append(df_split)
+                        if len(dfs_compiled) == split_no:
+                            df_out = pd.concat(dfs_compiled).reset_index(drop=True)
+                            save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
+                            df_out.to_json(
+                                f"{save_dir}/{data_split}_proc_description_output.jsonl",
+                                lines=True,
+                                orient="records",
+                            )
+                            df = df_out
+                        else:
+                            df = None
                 if df is not None:
                     log_info(
                         f"Completed raw processing for dataset {dataset_name} split {data_split}",
@@ -1155,7 +1222,42 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
                     orient="records",
                     lines=True,
                 )
-                df = MidLoader.generate_examples(dataset_name, data_split, parameters)
+                if dataset_name in TEST_DATASETS:
+                    df = MidLoader.generate_examples(
+                        dataset_name, data_split, parameters
+                    )
+                else:
+                    csv_length = len(csv)
+                    dfs_compiled = []
+                    df = None
+                    for i in range(len(split_no)):
+                        save_dir = parameters["data_dir"] + f"/raw/{dataset_name}_{i}/"
+                        start_index = int(i * csv_length / split_no)
+                        end_index = int((i + 1) * csv_length / split_no)
+                        csv_split = csv.iloc[start_index:end_index]
+                        csv_split.to_json(
+                            f"{save_dir}/{data_split}_proc_mid.jsonl",
+                            orient="records",
+                            lines=True,
+                        )
+                        df_split = MidLoader.generate_examples(
+                            dataset_name + f"_{i}", data_split, parameters
+                        )
+                        if df_split is None:
+                            log_info(
+                                f"Split {i} must still be running inference. Skipping the rest."
+                            )
+                            df = None
+                            break
+                        dfs_compiled.append(df_split)
+                    if len(dfs_compiled) == split_no:
+                        df = pd.concat(dfs_compiled).reset_index(drop=True)
+                        save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
+                        df.to_json(
+                            f"{save_dir}/{data_split}_proc_example_output.jsonl",
+                            lines=True,
+                            orient="records",
+                        )
                 if df is not None:
                     log_info(
                         f"Completed mid step processing for dataset {dataset_name} split {data_split}",
@@ -1211,9 +1313,7 @@ def process_final(parameters, dataset_name):
         df_filtered.to_json(
             f"{save_dir}/{split_name}_filtered.jsonl", orient="records", lines=True
         )
-        df_filtered.to_csv(
-            f"{save_dir}/{split_name}_filtered.csv", index=False
-        )
+        df_filtered.to_csv(f"{save_dir}/{split_name}_filtered.csv", index=False)
         log_info(
             f"Saved final filtered dataset with {len(df_filtered)} rows for {dataset_name} split {split_name} to {save_dir}/{split_name}_filtered.jsonl",
             parameters=parameters,
