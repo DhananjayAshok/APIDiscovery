@@ -1080,7 +1080,7 @@ class FilteredLoader:
 )
 @click.pass_obj
 def process_raw(parameters, dataset_name, execute_inference, mid_step):
-    split_no = 5
+    split_no = 20
     save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
     os.makedirs(save_dir, exist_ok=True)
     log_info(f"Processing raw dataset {dataset_name}", parameters=parameters)
@@ -1111,35 +1111,44 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
                 csv_length = len(csv)
                 dfs_compiled = []
                 df = None
-                for i in range(len(split_no)):
-                    save_dir = parameters["data_dir"] + f"/raw/{dataset_name}_{i}/"
-                    start_index = int(i * csv_length / split_no)
-                    end_index = int((i + 1) * csv_length / split_no)
-                    csv_split = csv.iloc[start_index:end_index]
-                    csv_split.to_json(
-                        f"{save_dir}/{data_split}_proc.jsonl",
-                        orient="records",
+                done= False
+                if os.path.exists(parameters["data_dir"] + f"/raw/{dataset_name}/{data_split}_proc_validation_output.jsonl"):
+                    df = pd.read_json(
+                        parameters["data_dir"]
+                        + f"/raw/{dataset_name}/{data_split}_proc_validation_output.jsonl",
                         lines=True,
                     )
-                    df_split = RawLoaders.generate_validation_code(
-                        dataset_name + f"_{i}", data_split, parameters
-                    )
-                    if df_split is None:
-                        log_info(
-                            f"Split {i} must still be running inference. Skipping the rest."
+                    done = True
+                if not done:
+                    for i in range(split_no):
+                        save_dir = parameters["data_dir"] + f"/raw/{dataset_name}_{i}/"
+                        os.makedirs(save_dir, exist_ok=True)
+                        start_index = int(i * csv_length / split_no)
+                        end_index = int((i + 1) * csv_length / split_no)
+                        csv_split = csv.iloc[start_index:end_index]
+                        csv_split.to_json(
+                            f"{save_dir}/{data_split}_proc.jsonl",
+                            orient="records",
+                            lines=True,
                         )
-                        df = None
-                        break
-                    dfs_compiled.append(df_split)
-                if len(dfs_compiled) == split_no:
-                    df = pd.concat(dfs_compiled).reset_index(drop=True)
-                    save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
-                    df.to_json(
-                        f"{save_dir}/{data_split}_proc_validation_output.jsonl",
-                        lines=True,
-                        orient="records",
-                    )
-
+                        df_split = RawLoaders.generate_validation_code(
+                            dataset_name + f"_{i}", data_split, parameters
+                        )
+                        if df_split is None:
+                            log_info(
+                                f"Split {i} must still be running inference. Skipping the rest."
+                            )
+                            df = None
+                            break
+                        dfs_compiled.append(df_split)
+                    if len(dfs_compiled) == split_no:
+                        df = pd.concat(dfs_compiled).reset_index(drop=True)
+                        save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
+                        df.to_json(
+                            f"{save_dir}/{data_split}_proc_validation_output.jsonl",
+                            lines=True,
+                            orient="records",
+                        )
             if dataset_name == "mbpp":
                 # save this file to the description_output directly
                 df.to_json(
@@ -1162,7 +1171,7 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
                         csv_length = len(df)
                         dfs_compiled = []
                         df_out = None
-                        for i in range(len(split_no)):
+                        for i in range(split_no):
                             df_split = RawLoaders.generate_description(
                                 dataset_name + f"_{i}", data_split, parameters
                             )
@@ -1230,7 +1239,7 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
                     csv_length = len(csv)
                     dfs_compiled = []
                     df = None
-                    for i in range(len(split_no)):
+                    for i in range(split_no):
                         save_dir = parameters["data_dir"] + f"/raw/{dataset_name}_{i}/"
                         start_index = int(i * csv_length / split_no)
                         end_index = int((i + 1) * csv_length / split_no)
