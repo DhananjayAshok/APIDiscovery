@@ -1101,7 +1101,7 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
         csv.to_json(f"{save_dir}/{data_split}_proc.jsonl", orient="records", lines=True)
         if execute_inference:
             if (
-                dataset_name in TEST_DATASETS
+                dataset_name in ["humaneval"]
             ):  # then they are small enough to do in one batch
                 df = RawLoaders.generate_validation_code(
                     dataset_name, data_split, parameters
@@ -1163,7 +1163,7 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
                 continue
             else:
                 if df is not None:
-                    if dataset_name in TEST_DATASETS:
+                    if dataset_name in ["humaneval"]:
                         df = RawLoaders.generate_description(
                             dataset_name, data_split, parameters
                         )
@@ -1171,28 +1171,37 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
                         csv_length = len(df)
                         dfs_compiled = []
                         df_out = None
-                        for i in range(split_no):
-                            df_split = RawLoaders.generate_description(
-                                dataset_name + f"_{i}", data_split, parameters
-                            )
-                            if df_split is None:
-                                log_info(
-                                    f"Split {i} must still be running inference. Skipping the rest."
-                                )
-                                df_out = None
-                                break
-                            dfs_compiled.append(df_split)
-                        if len(dfs_compiled) == split_no:
-                            df_out = pd.concat(dfs_compiled).reset_index(drop=True)
-                            save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
-                            df_out.to_json(
-                                f"{save_dir}/{data_split}_proc_description_output.jsonl",
+                        done = False
+                        if os.path.exists(parameters["data_dir"] + f"/raw/{dataset_name}/{data_split}_proc_description_output.jsonl"):
+                            df_out = pd.read_json(
+                                parameters["data_dir"]
+                                + f"/raw/{dataset_name}/{data_split}_proc_description_output.jsonl",
                                 lines=True,
-                                orient="records",
                             )
-                            df = df_out
-                        else:
-                            df = None
+                            done = True
+                        if not done:
+                            for i in range(split_no):
+                                df_split = RawLoaders.generate_description(
+                                    dataset_name + f"_{i}", data_split, parameters
+                                )
+                                if df_split is None:
+                                    log_info(
+                                        f"Split {i} must still be running inference. Skipping the rest."
+                                    )
+                                    df_out = None
+                                    break
+                                dfs_compiled.append(df_split)
+                            if len(dfs_compiled) == split_no:
+                                df_out = pd.concat(dfs_compiled).reset_index(drop=True)
+                                save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
+                                df_out.to_json(
+                                    f"{save_dir}/{data_split}_proc_description_output.jsonl",
+                                    lines=True,
+                                    orient="records",
+                                )
+                                df = df_out
+                            else:
+                                df = None
                 if df is not None:
                     log_info(
                         f"Completed raw processing for dataset {dataset_name} split {data_split}",
@@ -1231,7 +1240,7 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
                     orient="records",
                     lines=True,
                 )
-                if dataset_name in TEST_DATASETS:
+                if dataset_name in ["humaneval"]:
                     df = MidLoader.generate_examples(
                         dataset_name, data_split, parameters
                     )
@@ -1328,6 +1337,7 @@ def process_final(parameters, dataset_name):
             parameters=parameters,
         )
         dataset = Dataset.from_pandas(df_filtered)
+        split_name = split_name.replace("_", "")
         dataset.push_to_hub(
             f"{huggingface_hub_username}/{huggingface_hub_repo_name}",
             private=False,
