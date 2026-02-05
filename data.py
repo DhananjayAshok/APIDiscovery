@@ -13,19 +13,17 @@
     - test_outputs: A list of outputs from the function for the corresponding inputs. Is the same length as test_inputs.
 """
 
+from eval import RunTestFunc
 from utils.parameter_handling import load_parameters, compute_secondary_parameters
 from utils import log_error, log_info, log_warn
 from utils.lm_inference import HuggingFaceModel
 import click
-import multiprocessing
 import random
 from datasets import load_dataset, Dataset
 from tqdm import tqdm
 import pandas as pd
 import os
 import subprocess
-import sys
-from ast import literal_eval
 
 loaded_parameters = load_parameters()
 
@@ -486,7 +484,7 @@ def decode_shift(s: str):
             lambda x: Prompts.validation_creator + x + "\nValidation Function:\n"
         )
 
-        df["describe_prompt"] = df["test_function_anon_w_docstring"].apply(
+        df["description_prompt"] = df["test_function_anon_w_docstring"].apply(
             lambda x: Prompts.describe + x + "\nDescription: This function takes in "
         )
         df = df.sample(frac=0.75, random_state=42).reset_index(drop=True)
@@ -503,8 +501,10 @@ def decode_shift(s: str):
         output_column,
         max_new_tokens,
         parameters,
+        model=None,
     ):
-        model = parameters["benchmark_creation_model"]
+        if model is None:
+            model = parameters["benchmark_creation_model"]
         open_ai_batch_name = ""
         if "gpt" in model:
             open_ai_batch_name = f"{model}-{run_name}-{dataset_name}-{split}"
@@ -519,7 +519,7 @@ def decode_shift(s: str):
             df.to_json(output_file, orient="records", lines=True)
         except:
             log_warn(
-                f"Output file {output_file} not found after inference command.",
+                f"Output file {output_file} not found after inference command. This can happen for OpenAI API models. Run the command again after the batch is complete.",
                 parameters=parameters,
             )
             return None
@@ -820,87 +820,6 @@ class MidLoader:
         )
 
 
-class RunTestFunc:
-    """
-    A class to run a test function defined in code.
-    """
-
-    def __init__(self, func_code: str, timeout=0.5):
-        """
-        Initializes the RunTestFunc with the given function code. Is not safe (i.e. runs exec on func_code, unsure you do not run malicious code through here by mistake).
-
-        :param func_code: The code defining the test function. Should come from the provided dataset.
-        :type func_code: str
-        :param timeout: The maximum time in seconds to allow the function to run.
-        :type timeout: float
-        """
-        self.func_code = func_code
-        exec(func_code, globals())
-        self.test_func = globals()["test_func"]
-        self.access_counter = 0
-        self.attempted_inputs = []
-        self.recieved_outputs = []
-        self.timeout = timeout
-
-    @staticmethod
-    def worker(func, args, queue):
-        """Helper worker to run the function and put the result in a queue."""
-        try:
-            result = func(*args)
-            queue.put((result, None))
-        except Exception as e:
-            queue.put((None, str(e)))
-
-    def run_test(self, *args):
-        self.access_counter += 1
-        self.attempted_inputs.append(args)
-
-        # Use a Queue to get the return value back from the child process
-        queue = multiprocessing.Queue()
-        p = multiprocessing.Process(
-            target=self.worker, args=(self.test_func, args, queue)
-        )
-
-        p.start()
-
-        # Wait
-        p.join(timeout=self.timeout)
-
-        if p.is_alive():
-            # If the process is still running after 15s, kill it
-            p.terminate()
-            p.join()
-            self.recieved_outputs.append(
-                (None, f"Timeout: Function execution exceeded {self.timeout} seconds")
-            )
-            return None, f"Timeout: Function execution exceeded {self.timeout} seconds"
-
-        # If it finished, grab the result from the queue
-        if not queue.empty():
-            result = queue.get()
-            self.recieved_outputs.append(result)
-            return result
-        self.recieved_outputs.append((None, "Unknown error during execution"))
-        return None, "Unknown error during execution"
-
-    def run_test_str(self, args_str: str):
-        """
-        Runs the test function with the given arguments in string form.
-
-        :param args_str: Arguments in string form to pass to the test function.
-        :type args_str: str
-        :return: A tuple (return_value, error_message). If there is no error, error_message is None.
-        :rtype: tuple
-        """
-        try:
-            args = literal_eval(args_str)  # for safety
-        except Exception as e:
-            return None, "Invalid input args, is not valid python syntax"
-        if not isinstance(args, tuple) and not isinstance(args, list):
-            args = (args,)  # for single argument functions
-        return self.run_test(*args)
-
-
 class FilteredLoader:
     @staticmethod
     def parse_examples(df):
@@ -1101,9 +1020,9 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
         csv = data_splits[data_split]
         csv.to_json(f"{save_dir}/{data_split}_proc.jsonl", orient="records", lines=True)
         if execute_inference:
-            if (
-                dataset_name in ["humaneval"]
-            ):  # then they are small enough to do in one batch
+            if dataset_name in [
+                "humaneval"
+            ]:  # then they are small enough to do in one batch
                 df = RawLoaders.generate_validation_code(
                     dataset_name, data_split, parameters
                 )
@@ -1112,8 +1031,11 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
                 csv_length = len(csv)
                 dfs_compiled = []
                 df = None
-                done= False
-                if os.path.exists(parameters["data_dir"] + f"/raw/{dataset_name}/{data_split}_proc_validation_output.jsonl"):
+                done = False
+                if os.path.exists(
+                    parameters["data_dir"]
+                    + f"/raw/{dataset_name}/{data_split}_proc_validation_output.jsonl"
+                ):
                     df = pd.read_json(
                         parameters["data_dir"]
                         + f"/raw/{dataset_name}/{data_split}_proc_validation_output.jsonl",
@@ -1173,7 +1095,10 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
                         dfs_compiled = []
                         df_out = None
                         done = False
-                        if os.path.exists(parameters["data_dir"] + f"/raw/{dataset_name}/{data_split}_proc_description_output.jsonl"):
+                        if os.path.exists(
+                            parameters["data_dir"]
+                            + f"/raw/{dataset_name}/{data_split}_proc_description_output.jsonl"
+                        ):
                             df_out = pd.read_json(
                                 parameters["data_dir"]
                                 + f"/raw/{dataset_name}/{data_split}_proc_description_output.jsonl",
@@ -1194,7 +1119,9 @@ def process_raw(parameters, dataset_name, execute_inference, mid_step):
                                 dfs_compiled.append(df_split)
                             if len(dfs_compiled) == split_no:
                                 df_out = pd.concat(dfs_compiled).reset_index(drop=True)
-                                save_dir = parameters["data_dir"] + f"/raw/{dataset_name}/"
+                                save_dir = (
+                                    parameters["data_dir"] + f"/raw/{dataset_name}/"
+                                )
                                 df_out.to_json(
                                     f"{save_dir}/{data_split}_proc_description_output.jsonl",
                                     lines=True,
