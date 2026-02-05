@@ -6,7 +6,7 @@ import click
 import os
 import subprocess
 import multiprocessing
-
+import re
 
 class RunTestFunc:
     """
@@ -23,12 +23,39 @@ class RunTestFunc:
         :type timeout: float
         """
         self.func_code = func_code
-        exec(func_code, globals())
-        self.test_func = globals()["test_func"]
         self.access_counter = 0
         self.attempted_inputs = []
         self.received_outputs = []
-        self.timeout = timeout
+        self.timeout = timeout        
+        success = self.try_exec(func_code)
+        if success:
+            exec(func_code, globals())
+        else:
+            raise RuntimeError("Failed to exec function code, cannot initialize RunTestFunc.")
+        self.test_func = globals()["test_func"]
+
+    @staticmethod
+    def exec_worker(func_code, queue):
+        """Helper worker to run exec and put the result in a queue."""
+        try:
+            exec(func_code, globals())
+            queue.put(True) # runs
+        except Exception as e:
+            queue.put(False) # fails
+
+    def try_exec(self, func_code):
+        """Tries to exec the given code in a separate process with a timeout."""
+        queue = multiprocessing.Queue()
+        p = multiprocessing.Process(target=self.exec_worker, args=(func_code, queue))
+        p.start()
+        p.join(timeout=self.timeout)
+        if p.is_alive():
+            p.terminate()
+            p.join()
+            return False
+        if not queue.empty():
+            return queue.get()
+        return False
 
     @staticmethod
     def worker(func, args, queue):
@@ -89,6 +116,8 @@ class RunTestFunc:
         return self.run_test(*args)
 
 
+
+
 eval_prompt = f"""
 You are given a function description and a hypothesized description of what the function does.
 Your task is to rate how accurate the hypothesized description is compared to the true description on a scale from 1 to 5, where 1 means "completely inaccurate" and 5 means "completely accurate".
@@ -109,6 +138,51 @@ True Function Description: [TRUE]
 Hypothesized Description: [HYPOTHESIS]
 Explanation (very short):"""
 
+def parse_score(output):
+    response = output.strip().lower()
+    # look for the regex matching rating: followed by a number from 1 to 5, allowing for any amount of whitespace in between
+    match = re.search(r"rating:\s*([1-5])", response)
+    if match:
+        return int(match.group(1))
+    else:
+        log_warn(
+            "Could not find 'rating: [1-5]' in model response: "
+            + response
+        )
+        return None
+
+def parse_eval(evaluation_path):
+    try:
+        df = pd.read_json(evaluation_path, lines=True)
+    except:
+        log_warn(
+            f"Output file {evaluation_path} not found after inference command. This can happen for openai inference. Run the script again when the batch is done. "
+        )
+        return
+    if isinstance(df["score_output"][0], list):
+        df["score_output"] = df["score_output"].apply(
+            lambda x: x[0] if len(x) > 0 else ""
+        )
+    df["score"] = df["score_output"].apply(parse_score)
+    nan_frac = df["score"].isna().mean()
+    if nan_frac > 0:
+        log_warn(f"Parsed scores from evaluation output, but {round(nan_frac * 100, 2)}% of scores are NaN. This can happen if the judge model did not follow the output format correctly.")
+    if "n_queries" not in df.columns:
+        df["n_queries"] = 0
+    if "concluded" not in df.columns:
+        df["concluded"] = False
+    df.to_json(evaluation_path, orient="records", lines=True)
+    if df is not None:
+        avg_n_queries = df["n_queries"].mean()
+        avg_score = df["score"].mean()
+        perc_concluded = df["concluded"].mean()
+        log_info(
+            f"n_queries: {avg_n_queries}, concluded: {round(perc_concluded* 100, 2)}, score: {avg_score}"
+        )
+        log_info(df.groupby("concluded")["score"].mean())
+        log_info(df[["n_queries", "score"]].mean())
+    log_info(f"Saved scored predictions to {evaluation_path}")
+
 
 def score_predictions(
     *,
@@ -121,77 +195,44 @@ def score_predictions(
     model = parameters["evaluation_model_name"]
     model_save_name = model.split("/")[-1].strip()
     save_name = f"{save_name}-{dataset_name}-judge-{model_save_name}"
-    evaluation_path = (
-        f"results/{dataset_name}/" + save_name + f"_scored_{model_save_name}.jsonl"
+    evaluation_path = os.path.abspath(
+        f"results/{dataset_name}/" + save_name + ".jsonl"
     )
+    skip = False
     if not override_eval:
         if os.path.exists(evaluation_path):
             log_info(
-                f"Scored predictions already exist at {evaluation_path}, skipping evaluation."
+                f"Scored predictions already exist at {evaluation_path}, skipping judge generation."
             )
-            df = pd.read_json(evaluation_path, lines=True)
-            return df
-    df = pd.read_json(predictions_save_path, lines=True)
+            skip = True
+    if not skip:
+        df = pd.read_json(predictions_save_path, lines=True)
+        def rectify_description(x):
+            if isinstance(x, list):
+                x = x[0] if len(x) > 0 else ""
+            x = x.strip()
+            x = x.split("\n")[0] # take only the first line if there are multiple
+            return x
+        df["predicted_description"] = df["predicted_description"].apply(rectify_description)        
+        def get_score_prompt(row):
+            prompt_filled = eval_prompt.replace("[TRUE]", row["description"]).replace(
+                "[HYPOTHESIS]", row["predicted_description"]
+            )
+            return prompt_filled
 
-    def get_score_prompt(row):
-        prompt_filled = eval_prompt.replace("[TRUE]", row["description"]).replace(
-            "[HYPOTHESIS]", row["predicted_description"]
-        )
-        return prompt_filled
+        df["score_prompt"] = df.apply(get_score_prompt, axis=1)
+        csv_path = predictions_save_path.replace(".jsonl", ".csv")
+        df.to_csv(csv_path, index=False)
+        open_ai_batch_name = ""
+        if "gpt" in model:
+            open_ai_batch_name = f"{save_name}"
+        openaibatch_str = "-n " + open_ai_batch_name if open_ai_batch_name != "" else ""
+        command_string = f"bash scripts/infer.sh -i {csv_path} -o {evaluation_path} -m {model} -c score_prompt -d score_output -t 300 -g judge {openaibatch_str}"
+        log_info(f"Generating scores with command: {command_string}")
+        subprocess.run(command_string, shell=True, check=True)
+        os.remove(csv_path)    
+    parse_eval(evaluation_path)
 
-    def parse_score(output):
-        response = output.strip().lower()
-        if response.count("rating:") == 1:
-            response = response.split("rating:")[1].strip()
-        else:
-            log_warn(
-                "Could not find 'Rating:' (or found multiple) in model response: "
-                + response
-            )
-            return None
-        if response.isdigit():
-            rating = int(response)
-            if 1 <= rating <= 5:
-                return rating
-        else:
-            log_warn("Could not parse rating from model response: " + response)
-        return None
-
-    df["score_prompt"] = df.apply(get_score_prompt, axis=1)
-    df.to_json(predictions_save_path, orient="records", lines=True)
-    open_ai_batch_name = ""
-    if "gpt" in model:
-        open_ai_batch_name = f"{save_name}"
-    openaibatch_str = "-n " + open_ai_batch_name if open_ai_batch_name != "" else ""
-    command_string = f"bash scripts/infer.sh -i {predictions_save_path} -o {evaluation_path} -m {model} -c score_prompt -d score_output -t 300 -g judge {openaibatch_str}"
-    log_info(f"Generating scores with command: {command_string}")
-    subprocess.run(command_string, shell=True, check=True)
-    try:
-        df = pd.read_json(evaluation_path, lines=True)
-        if isinstance(df["score_output"][0], list):
-            df["score_output"] = df["score_output"].apply(
-                lambda x: x[0] if len(x) > 0 else ""
-            )
-        if "output_logits" in df.columns:
-            df.drop("output_logits", axis=1, inplace=True)
-        df["score"] = df["score_output"].apply(parse_score)
-        df.to_json(evaluation_path, orient="records", lines=True)
-        if df is not None:
-            avg_n_queries = df["n_queries"].mean()
-            avg_score = df["score"].mean()
-            perc_concluded = df["concluded"].mean()
-            log_info(
-                f"n_queries: {avg_n_queries}, concluded: {round(perc_concluded* 100, 2)}, score: {avg_score}"
-            )
-            log_info(df.groupby("concluded")["score"].mean())
-            log_info(df[["n_queries", "score"]].mean())
-        log_info(f"Saved scored predictions to {evaluation_path}")
-        return df
-    except:
-        log_warn(
-            f"Output file {evaluation_path} not found after inference command. This can happen for openai inference. Run the script again when the batch is done. "
-        )
-    return None
 
 
 @click.command()
@@ -217,7 +258,7 @@ def do(
     save_name,
     override_eval,
 ):
-    predictions_save_path = f"results/{dataset_name}/{save_name}.jsonl"
+    predictions_save_path = os.path.abspath(f"results/{dataset_name}/{save_name}.jsonl")
     if not os.path.exists(predictions_save_path):
         log_error(
             f"Predictions file not found at {predictions_save_path}. Run the generation script first."

@@ -195,9 +195,11 @@ def run_finetuned(dataset_name, model_name, save_name, override_gen):
             split="test",
             input_file=input_file,
             output_file=output_file,
+            input_column="direct_prompt",
             output_column="predicted_description",
             max_new_tokens=300,
             model=model_name,
+            parameters=parameters
         )
         return
 

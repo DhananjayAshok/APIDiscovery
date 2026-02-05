@@ -1,9 +1,10 @@
-source configs/config.env | echo "Could not load configs/config.env" && exit 1
+source configs/config.env
 if [ -z "$evaluation_model_name" ]; then
     echo "Error: evaluation_model_name is not set. Please set it with python configs/create_env_file.py"
     exit 1
 fi
 evaluation_model_save_name="${evaluation_model_name#*/}"
+echo "Evaluation model: $evaluation_model_save_name"
 
 models=("meta-llama/Meta-Llama-3-8B-Instruct" "gpt-4o-mini")
 datasets=("humaneval" "cruxeval" "mbpp")
