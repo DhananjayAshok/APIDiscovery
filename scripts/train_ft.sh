@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-source configs/config.env
+source configs/config.env | echo "Could not load configs/config.env" && exit 1
 # Default values for optional arguments
 declare -A ARGS
 # make optional arguments: b: batch_size, e: epochs

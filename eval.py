@@ -1,5 +1,5 @@
 from ast import literal_eval
-from utils import log_warn, log_info, load_parameters, file_makedir
+from utils import log_warn, log_info, load_parameters, file_makedir, log_error
 from tqdm import tqdm
 import pandas as pd
 import click
@@ -121,7 +121,9 @@ def score_predictions(
     model = parameters["evaluation_model_name"]
     model_save_name = model.split("/")[-1].strip()
     save_name = f"{save_name}-{dataset_name}-judge-{model_save_name}"
-    evaluation_path = "results/" + save_name + "_scored_predictions.jsonl"
+    evaluation_path = (
+        f"results/{dataset_name}/" + save_name + f"_scored_{model_save_name}.jsonl"
+    )
     if not override_eval:
         if os.path.exists(evaluation_path):
             log_info(
@@ -194,19 +196,16 @@ def score_predictions(
 
 @click.command()
 @click.option(
-    "--predictions_save_path",
-    type=str,
-    required=True,
-    help="Path to the predictions JSONL file.",
-)
-@click.option(
-    "--save_name", type=str, required=True, help="Base name for saving results."
-)
-@click.option(
     "--dataset_name",
     type=str,
     required=True,
-    help="Name of the dataset to evaluate on.",
+    help="Name of the dataset.",
+)
+@click.option(
+    "--save_name",
+    type=str,
+    default=None,
+    help="Name to use when saving evaluation results. If not provided, will be derived from the model name.",
 )
 @click.option(
     "--override_eval",
@@ -214,11 +213,15 @@ def score_predictions(
     help="Whether to override existing evaluation results.",
 )
 def do(
-    predictions_save_path,
-    save_name,
     dataset_name,
+    save_name,
     override_eval,
 ):
+    predictions_save_path = f"results/{dataset_name}/{save_name}.jsonl"
+    if not os.path.exists(predictions_save_path):
+        log_error(
+            f"Predictions file not found at {predictions_save_path}. Run the generation script first."
+        )
     score_predictions(
         predictions_save_path=predictions_save_path,
         save_name=save_name,
