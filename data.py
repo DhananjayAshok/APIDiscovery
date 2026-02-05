@@ -596,11 +596,11 @@ class MidLoader:
             else:
                 validation_code = None
             if validation_code is None:
-                log_warn(
-                    f"Could not generate validation code for index {index}\n"
-                    + validation_output,
-                    parameters=loaded_parameters,
-                )
+                #log_warn(
+                #    f"Could not generate validation code for index {index}\n"
+                #    + validation_output,
+                #    parameters=loaded_parameters,
+                #)
                 continue
             df.at[index, "validation_code"] = validation_code
             test_func_str = move_imports_top(
@@ -610,10 +610,11 @@ class MidLoader:
                 exec(test_func_str)
                 df.at[index, "test_func_validated"] = test_func_str
             except Exception as e:
-                log_warn(
-                    f"Could not exec validated function for index {index}: {str(e)}",
-                    parameters=loaded_parameters,
-                )
+                #log_warn(
+                #    f"Could not exec validated function for index {index}: {str(e)}",
+                #    parameters=loaded_parameters,
+                #)
+                pass
         # drop test_func_validated Nans
         original_length = len(df)
         df = df[~df["test_func_validated"].isna()].reset_index(drop=True)
@@ -635,10 +636,10 @@ class MidLoader:
         ):
             description = row["description_output"]
             if description.strip() == "":
-                log_warn(
-                    f"Could not generate description for index {index}",
-                    parameters=loaded_parameters,
-                )
+                #log_warn(
+                #    f"Could not generate description for index {index}",
+                #    parameters=loaded_parameters,
+                #)
                 description = None
             if "\n\n" in description:
                 description = description.split("\n\n")[0]
