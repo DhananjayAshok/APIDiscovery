@@ -179,11 +179,7 @@ def run_finetuned(dataset_name, model_name, save_name, override_gen):
     parameters = load_parameters()
     data_dir = parameters["data_dir"] + f"/final/{dataset_name}/"
     model_save_name = model_name.split("/")[-1].strip()
-    if save_name is None:
-        if "_ft" in model_save_name:
-            save_name = model_save_name
-        else:
-            save_name = f"{model_save_name}_ft"
+    save_name = model_save_name if save_name is None else save_name
     save_path = get_save_paths(dataset_name, save_name)
     file_makedir(save_path)
     if os.path.exists(save_path) and not override_gen:
