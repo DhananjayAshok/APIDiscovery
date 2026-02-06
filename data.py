@@ -897,6 +897,7 @@ class FilteredLoader:
 
     @staticmethod
     def filter_examples(test_func_code: str, examples: list):
+        from eval import RunTestFunc
         try:
             runner = RunTestFunc(test_func_code)
         except Exception as e:
@@ -968,6 +969,7 @@ class FilteredLoader:
 
         def make_prompt(row):
             func_header = get_header(row["test_func_validated"])
+            from eval import RunTestFunc
             runner = RunTestFunc(row["test_func_validated"])
             prompt = "You are given the following function signature:\n"
             prompt += func_header + "\n"

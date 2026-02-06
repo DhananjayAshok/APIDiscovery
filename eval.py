@@ -28,11 +28,13 @@ class RunTestFunc:
         self.received_outputs = []
         self.timeout = timeout        
         success = self.try_exec(func_code)
+        locals = {}
+        global_dict = globals().copy()
         if success:
-            exec(func_code, globals())
+            exec(func_code, global_dict, locals)
         else:
             raise RuntimeError("Failed to exec function code, cannot initialize RunTestFunc.")
-        self.test_func = globals()["test_func"]
+        self.test_func = locals["test_func"]
 
     @staticmethod
     def exec_worker(func_code, queue):
