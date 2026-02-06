@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 
-source configs/config.env | echo "Could not load configs/config.env" && exit 1
+source configs/config.env
+if [[ -z "$storage_dir" ]]; then
+    echo "Error: storage_dir is not set. Please set it in configs/config.env."
+    exit 1
+fi
 # Default values for optional arguments
 declare -A ARGS
 # make optional arguments: b: batch_size, e: epochs

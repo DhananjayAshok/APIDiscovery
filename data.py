@@ -12,8 +12,6 @@
     - test_inputs: A list of example inputs to the function that did not error. No overlap with train_inputs.
     - test_outputs: A list of outputs from the function for the corresponding inputs. Is the same length as test_inputs.
 """
-
-from eval import RunTestFunc
 from utils.parameter_handling import load_parameters, compute_secondary_parameters
 from utils import log_error, log_info, log_warn
 from utils.lm_inference import HuggingFaceModel
@@ -576,6 +574,7 @@ def decode_shift(s: str):
 class MidLoader:
     @staticmethod
     def parse_validation(df):
+        from eval import RunTestFunc
         df["test_func_validated"] = None
         df["validation_output"] = df["validation_output"].apply(
             lambda x: x[0] if isinstance(x, list) else x
@@ -595,6 +594,10 @@ class MidLoader:
                     validation_code = None
             else:
                 validation_code = None
+            if "import argparse" in validation_output:
+                validation_code = None
+            if "__name__ == " in validation_output:
+                validation_code = None
             if validation_code is None:
                 #log_warn(
                 #    f"Could not generate validation code for index {index}\n"
@@ -607,7 +610,7 @@ class MidLoader:
                 validation_code + "\n" + row["test_func_anon"]
             )  # Should be able to exec this now
             try:
-                exec(test_func_str)
+                RunTestFunc(func_code=test_func_str)
                 df.at[index, "test_func_validated"] = test_func_str
             except Exception as e:
                 #log_warn(
@@ -1256,6 +1259,7 @@ def process_final(parameters, dataset_name):
                 "direct_prompt",
             ]
         ]
+        split_name = split_name.replace("_", "")
         df_filtered.to_json(
             f"{save_dir}/{split_name}_filtered.jsonl", orient="records", lines=True
         )
@@ -1265,7 +1269,6 @@ def process_final(parameters, dataset_name):
             parameters=parameters,
         )
         dataset = Dataset.from_pandas(df_filtered)
-        split_name = split_name.replace("_", "")
         dataset.push_to_hub(
             f"{huggingface_hub_username}/{huggingface_hub_repo_name}",
             private=False,

@@ -6,7 +6,7 @@ fi
 evaluation_model_save_name="${evaluation_model_name#*/}"
 echo "Evaluation model: $evaluation_model_save_name"
 
-models=("meta-llama/Meta-Llama-3-8B-Instruct" "gpt-4o-mini")
+models=("meta-llama/Meta-Llama-3-8B-Instruct" "gpt-4o-mini" "Qwen/Qwen3-8B" "Qwen/Qwen3-32B")
 datasets=("humaneval" "cruxeval" "mbpp")
 
 for dataset_name in "${datasets[@]}"; do

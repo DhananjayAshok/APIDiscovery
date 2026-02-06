@@ -215,7 +215,14 @@ def score_predictions(
             return x
         df["predicted_description"] = df["predicted_description"].apply(rectify_description)        
         def get_score_prompt(row):
-            prompt_filled = eval_prompt.replace("[TRUE]", row["description"]).replace(
+            description = None
+            if "description" in row:
+                description = row["description"]
+            elif "true_description" in row:
+                description = row["true_description"]
+            else:
+                log_error(f"Row with columns: {row.keys()} does not contain a description column.")
+            prompt_filled = eval_prompt.replace("[TRUE]", description).replace(
                 "[HYPOTHESIS]", row["predicted_description"]
             )
             return prompt_filled
