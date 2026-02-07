@@ -12,6 +12,7 @@
     - test_inputs: A list of example inputs to the function that did not error. No overlap with train_inputs.
     - test_outputs: A list of outputs from the function for the corresponding inputs. Is the same length as test_inputs.
 """
+
 from utils.parameter_handling import load_parameters, compute_secondary_parameters
 from utils import log_error, log_info, log_warn
 from utils.lm_inference import HuggingFaceModel
@@ -575,6 +576,7 @@ class MidLoader:
     @staticmethod
     def parse_validation(df):
         from eval import RunTestFunc
+
         df["test_func_validated"] = None
         df["validation_output"] = df["validation_output"].apply(
             lambda x: x[0] if isinstance(x, list) else x
@@ -599,11 +601,11 @@ class MidLoader:
             if "__name__ == " in validation_output:
                 validation_code = None
             if validation_code is None:
-                #log_warn(
+                # log_warn(
                 #    f"Could not generate validation code for index {index}\n"
                 #    + validation_output,
                 #    parameters=loaded_parameters,
-                #)
+                # )
                 continue
             df.at[index, "validation_code"] = validation_code
             test_func_str = move_imports_top(
@@ -613,10 +615,10 @@ class MidLoader:
                 RunTestFunc(func_code=test_func_str)
                 df.at[index, "test_func_validated"] = test_func_str
             except Exception as e:
-                #log_warn(
+                # log_warn(
                 #    f"Could not exec validated function for index {index}: {str(e)}",
                 #    parameters=loaded_parameters,
-                #)
+                # )
                 pass
         # drop test_func_validated Nans
         original_length = len(df)
@@ -639,10 +641,10 @@ class MidLoader:
         ):
             description = row["description_output"]
             if description.strip() == "":
-                #log_warn(
+                # log_warn(
                 #    f"Could not generate description for index {index}",
                 #    parameters=loaded_parameters,
-                #)
+                # )
                 description = None
             if "\n\n" in description:
                 description = description.split("\n\n")[0]
@@ -898,6 +900,7 @@ class FilteredLoader:
     @staticmethod
     def filter_examples(test_func_code: str, examples: list):
         from eval import RunTestFunc
+
         try:
             runner = RunTestFunc(test_func_code)
         except Exception as e:
@@ -970,6 +973,7 @@ class FilteredLoader:
         def make_prompt(row):
             func_header = get_header(row["test_func_validated"])
             from eval import RunTestFunc
+
             runner = RunTestFunc(row["test_func_validated"])
             prompt = "You are given the following function signature:\n"
             prompt += func_header + "\n"
@@ -1278,6 +1282,7 @@ def process_final(parameters, dataset_name):
             config_name=dataset_name,
         )
 
+
 @click.command()
 @click.pass_obj
 def merge_final(parameters):
@@ -1285,7 +1290,10 @@ def merge_final(parameters):
         all_datasets = []
         for dataset_name in options:
             dataset = load_dataset(
-                parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset", dataset_name=dataset_name, split=split)
+                parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset",
+                dataset_name=dataset_name,
+                split=split,
+            )
             all_datasets.append(dataset)
         merged_dataset = concatenate_datasets(all_datasets)
         merged_dataset.push_to_hub(
@@ -1294,6 +1302,7 @@ def merge_final(parameters):
             split=split,
             config_name="all",
         )
+
 
 @click.command()
 @click.option(
@@ -1310,6 +1319,25 @@ def merge_final(parameters):
 )
 @click.pass_obj
 def load_parquets(parameters, dataset_name, train_val_split):
+    reasoning_prompt = f"""
+    You are given a Python function with the following header:
+    [HEADER]
+    Your task is to try various inputs to discover what this function does.
+
+    So far, you have tried the following inputs: [PREV]
+
+    Based on this, what kind of input will you use to test the function with next? Very briefly describe your next intended input only, and the properties it satisfies. How does this input help test the hypothesis? What is the expected output? Be extremely concise and short. 
+    Your response should be extremely short and concise, just a few sentences. After the response, say [STOP]
+    Now provide your reasoning below and then say [STOP]
+    Reasoning:"""
+
+    def get_prompt(test_func_validated):
+        header_start = test_func_validated.index("def test_func(")
+        header_end = test_func_validated.index("\n", header_start)
+        func_header = test_func_validated[header_start:header_end]
+        prompt = reasoning_prompt.replace("[HEADER]", func_header)
+        return prompt
+
     splits = []
     if dataset_name in TEST_DATASETS + ["all"]:
         splits.append("test")
@@ -1319,9 +1347,14 @@ def load_parquets(parameters, dataset_name, train_val_split):
         parquet_path = parameters["data_dir"] + f"/parquets/{dataset_name}/"
         dataset = load_dataset(
             parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset",
-            dataset_name, split=split)
+            dataset_name,
+            split=split,
+        )
+        dataset = dataset.map(
+            lambda x: {"prompt": get_prompt(x["test_func_validated"])}
+        )
         if split == "test":
-            dataset.to_parquet(parquet_path+f"test.parquet")
+            dataset.to_parquet(parquet_path + f"test.parquet")
         else:
             dataset.shuffle(seed=parameters["random_seed"])
             train_size = int(len(dataset) * train_val_split)
@@ -1333,8 +1366,6 @@ def load_parquets(parameters, dataset_name, train_val_split):
             f"Saved {split} split of dataset {dataset_name} to parquet at {parquet_path}",
             parameters=parameters,
         )
-            
-
 
 
 @click.group()

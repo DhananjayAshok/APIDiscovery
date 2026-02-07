@@ -258,7 +258,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             output, err = example_outputs[i]
             self.prev_results.append((input_str, output, err))
         self.concluded = False
-        self.turn_kind = "reasoning"
+        self.turn_kind = "input"
         self.current_hypothesis = "First Turn. No hypothesis yet."
         self.previous_reasoning = None
         openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -372,6 +372,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                 "[PREV]", self.get_prev_results_str()
             ).replace("[HYPOTHESIS]", self.current_hypothesis)
             new_obs = {"role": "system", "content": prompt}
+            self.turn_kind = "input"
             return BaseTextEnvStepOutput(
                 observations=[new_obs],
                 reward=reward,
@@ -389,6 +390,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             )
             new_obs = {"role": "system", "content": prompt}
             reward = self.get_reasoning_reward(action)
+            self.turn_kind = "reflection"
             return BaseTextEnvStepOutput(
                 observations=[new_obs],
                 reward=reward,
@@ -421,6 +423,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                 .replace("[REASONING]", self.previous_reasoning)
             )
             new_obs = {"role": "system", "content": prompt}
+            self.turn_kind = "reasoning"
             return BaseTextEnvStepOutput(
                 observations=[new_obs],
                 reward=0.1 if ret is not None else -0.1,
