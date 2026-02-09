@@ -2,3 +2,4 @@ storage_dir: "PLACEHOLDER" # Path to the directory where heavy duty storage will
 env_dir: "setup/.venv/" # Path to the virtual environment. If you have installed the venv in a different location, make sure to change this.
 huggingface_repo_namespace: "PLACEHOLDER" # The namespace (user or org) on the hub where the repo is located. Use this to sync large files
 huggingface_repo_name: "PLACEHOLDER" # The name of the repo on the hub. Use this to sync large files
+skyrl_env_dir: "PLACEHOLDER" # Path to the directory where the skyrl environment is located. This is needed for the training script to find the environment.
