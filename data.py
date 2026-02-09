@@ -1323,9 +1323,6 @@ def load_parquets(parameters, dataset_name, train_val_split):
     You are given a Python function with the following header:
     [HEADER]
     Your task is to try various inputs to discover what this function does.
-
-    So far, you have tried the following inputs: [PREV]
-
     Based on this, what kind of input will you use to test the function with next? Very briefly describe your next intended input only, and the properties it satisfies. How does this input help test the hypothesis? What is the expected output? Be extremely concise and short. 
     Your response should be extremely short and concise, just a few sentences. After the response, say [STOP]
     Now provide your reasoning below and then say [STOP]
