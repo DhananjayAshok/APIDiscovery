@@ -31,6 +31,7 @@ trainer_ckpt_path=$storage_dir/models/$run_name/ckpt
 trainer_export_path=$storage_dir/models/$run_name/final_checkpoint/
 
 source $skyrl_env_dir/bin/activate
+cd SkyRL/skyrl-train || { echo "SkyRL/skyrl-train directory not found. Make sure the path is correct."; exit 1; }
 python -m examples.function_discovery.rl_main \
   data.train_data="['$DATA_DIR/train.parquet']" \
   data.val_data="['$DATA_DIR/val.parquet']" \
