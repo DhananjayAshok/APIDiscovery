@@ -1,7 +1,6 @@
 from ast import literal_eval
 from utils import log_warn, log_info, load_parameters, file_makedir, log_error
 from tqdm import tqdm
-import deepcopy
 import pandas as pd
 import click
 import os
