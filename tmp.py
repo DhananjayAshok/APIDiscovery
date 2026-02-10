@@ -9,13 +9,11 @@ print(examples)
 
 import os
 from urllib import response
-from skyrl_gym.envs.base_text_env import BaseTextEnv, BaseTextEnvStepOutput
 from typing import Dict, Any
 import re
 import multiprocessing
 import time
 from ast import literal_eval
-from openai import OpenAI
 from dataclasses import dataclass
 import numpy as np
 
