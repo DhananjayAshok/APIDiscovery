@@ -15,7 +15,7 @@ def skyrl_entrypoint(cfg: DictConfig):
     # Register the multiply environment inside the entrypoint task (no need to modify the skyrl-gym package).
     register(
         id="function-discovery",
-        entry_point="env:FunctionDiscoveryEnv",
+        entry_point="examples.function_discovery.env:FunctionDiscoveryEnv",
     )
 
     # make sure that the training loop is not run on the head node.
