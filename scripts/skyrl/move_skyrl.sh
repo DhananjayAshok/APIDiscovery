@@ -69,3 +69,4 @@ source configs/config.env
 mkdir -p SkyRL/skyrl-train/examples/function_discovery/
 rm SkyRL/skyrl-train/examples/function_discovery/*
 cp -r scripts/skyrl/* SkyRL/skyrl-train/examples/function_discovery/
+echo "Copied training scripts to SkyRL/skyrl-train/examples/function_discovery/"
