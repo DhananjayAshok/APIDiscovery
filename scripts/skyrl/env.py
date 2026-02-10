@@ -8,6 +8,7 @@ import time
 from ast import literal_eval
 from openai import OpenAI
 from dataclasses import dataclass
+import numpy as np
 
 
 class RunTestFunc:
@@ -128,7 +129,7 @@ class LLMJudgeEnvConfig:
     base_url = None
 
 
-class FunctionDiscoveryEnv(BaseTextEnv):
+class FunctionDiscoveryEnv1(BaseTextEnv):
     """
     Environment for multiplication.
     """
@@ -445,3 +446,239 @@ class FunctionDiscoveryEnv(BaseTextEnv):
 
 
 #################################### Code from the Examples Below: ################################################
+class FunctionDiscoveryEnv(BaseTextEnv):
+    """
+    Environment for multiplication.
+    """
+
+    reasoning_prompt = f"""
+    You are given a Python function with the following header:
+    [HEADER]
+    Your task is to try various inputs to discover what this function does.
+
+    So far, you have tried the following inputs: [PREV]
+    You then came up with the following running hypothesis: [HYPOTHESIS]
+
+    Based on this, what kind of input will you use to test the function with next? Very briefly describe your next intended input only, and the properties it satisfies. How does this input help test the hypothesis? What is the expected output? Be extremely concise and short. 
+    Your response should be extremely short and concise, just a few sentences. After the response, say [STOP]
+    Now provide your reasoning below and then say [STOP]
+    Reasoning:"""
+
+    input_prompt = f"""
+    You are given a Python function with the following header:
+    [HEADER]
+    Your task is to try various inputs to discover what this function does.
+
+    So far, you have tried the following inputs: [PREV]
+    You then came up with the following running hypothesis: [HYPOTHESIS]
+
+    Based on this, you wanted to try the following kind of input next: [REASONING]. 
+    Now, give the exact input to test the function with next.
+    The input should be valid Python tuples and your output should follow the format below.
+    Suggested Input:
+    (arg0, arg1) [STOP] #(arg0, arg1) should be replaced with actual input values in your response and must be a valid python tuple. This is an example format for a two arg function. You should adjust the number of arguments as per the function definition.
+    Now provide your suggested inputs below and then say [STOP]
+    Suggested Input:"""
+
+    reflection_prompt = f"""
+    You are given a Python function with the following header:
+    [HEADER]
+    Your task is to try various inputs to discover what this function does.
+
+    So far, you have tried the following inputs: [PREV]
+    You then came up with the following running hypothesis: [HYPOTHESIS]
+    You wanted to test this, with an input coming from the reasoning: [REASONING]
+    Finally, you just tried the following inputs: [LAST_INPUTS]
+
+    Based on this, can you conclude with very high confidence what the function does? If the function did not perform as you expected, the answer is likely no. If you think it is yes, then say YES and provide a concise description of its functionality.
+    Else, say NO and provide a revised hypothesis of what you think the function may do, and some guidance on how to test this further.
+    Format Example:
+    Hypothesis Conclusion: YES/NO
+    Summary: <your extremely concise summary or brief revised hypothesis here>
+    [STOP]
+
+    Now, provide your conclusion below, remember to say [STOP] after your summary.
+    Hypothesis Conclusion:"""
+
+    judge_hypothesis_prompt = f"""
+    You are given the following Python function:
+    [FUNCTION]
+
+    What the function truly does is: [FUNCTIONALITY]
+    A student is trying to understand what this function does by testing it with various inputs. They have come up with the following hypothesis about the function's behavior:
+    [HYPOTHESIS]
+    How good is this hypothesis? Please rate it on a scale of 0 to 9, where 0 means the hypothesis is completely incorrect and 9 means the hypothesis is completely correct. Please provide a brief explanation for your rating.
+    Answer format:
+    Explanation: <your brief explanation here>
+    Rating: <a number from 0 to 9>
+    [STOP]
+    Now, provide your evaluation below, remember to follow the answer format and say [STOP] at the end.
+    Evaluation:
+    """
+
+    judge_reasoning_prompt = f"""
+    You are given the following Python function:
+    [FUNCTION]
+
+    What the function truly does is: [FUNCTIONALITY]
+    A student is trying to understand what this function does by testing it with various inputs. They have come up with the following hypothesis about the function's behavior:
+    [HYPOTHESIS]
+    Their reasoning for the next input they want to test is as follows:
+    [REASONING]
+    How good is this reasoning for testing the hypothesis? Please rate it on a scale of 0 to 9, where 0 means the reasoning is completely ineffective for testing the hypothesis and 9 means the reasoning is extremely effective for testing the hypothesis. Please provide a brief explanation for your rating.
+    Answer format:
+    Explanation: <your brief explanation here>
+    Rating: <a number from 0 to 9>
+    [STOP]
+    """
+
+    def __init__(
+        self,
+        env_config: Dict[str, Any] = {},
+        extras: Dict[str, Any] = {},
+    ):
+        super().__init__()
+
+        assert "test_func_validated" in extras, "test_func_validated field is required"
+        assert "description" in extras, "description field is required"
+        assert "train_inputs" in extras, "train_inputs field is required"
+        assert "test_inputs" in extras, "test_inputs field is required"
+        self.test_func_validated = extras["test_func_validated"]
+        self.description = extras["description"]
+        self.train_inputs = extras["train_inputs"]
+        self.test_inputs = extras["test_inputs"]
+        self.max_turns = 40
+        self.max_previous_results = 5
+        try:
+            self.runner = RunTestFunc(self.test_func_validated)
+        except:
+            self.runner = None
+        if self.runner is not None:
+            func_code = self.test_func_validated
+            header_start = func_code.index("def test_func(")
+            header_end = func_code.index("\n", header_start)
+            func_header = func_code[header_start:header_end]
+            self.func_header = func_header
+            self.reasoning_prompt_filled = self.reasoning_prompt.replace(
+                "[HEADER]", self.func_header
+            )
+            self.input_prompt_filled = self.input_prompt.replace(
+                "[HEADER]", self.func_header
+            )
+            self.reflection_prompt_filled = self.reflection_prompt.replace(
+                "[HEADER]", self.func_header
+            )
+            self.prev_results = []
+            example_outputs = []
+            for example in self.train_inputs:
+                example_outputs.append(self.runner.run_test_str(example))
+
+            for i, example_input in enumerate(self.train_inputs):
+                input_str = example_input
+                output, err = example_outputs[i]
+                self.prev_results.append((input_str, output, err))
+            self.concluded = False
+            self.turn_kind = "input"
+            self.current_hypothesis = "First Turn. No hypothesis yet."
+            self.previous_reasoning = None
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if openai_api_key is None:
+                raise ValueError("`OPENAI_API_KEY` must be set for Llm as a judge env")
+            self.llm_judge_client = OpenAI(
+                base_url=env_config.base_url, api_key=openai_api_key
+            )
+            self.model = env_config.model
+
+    def judge_infer(self, prompt, max_new_tokens=100):
+        response = self.llm_judge_client.responses.create(
+            model=self.model,
+            input=prompt,
+            max_output_tokens=max_new_tokens,
+        )
+        text = response.output_text
+        if "[STOP]" in text:
+            text = text.split("[STOP]")[0]
+        return text.strip()
+
+    def get_prev_results_str(self):
+        if not self.prev_results:
+            return "[]"
+        results_str = "[\n"
+        to_slice = (
+            self.prev_results[-self.max_previous_results :]
+            if self.max_previous_results is not None
+            else self.prev_results
+        )
+        for inp, out, err in to_slice:
+            results_str += f"  Input: {inp} => Output: {out}, Error: {err}\n"
+        results_str += "]"
+        return results_str
+
+    def get_hypothesis_reward(self, decision: str, clean_parse: bool):
+        hypothesis_prompt_filled = self.judge_hypothesis_prompt.replace(
+            "[FUNCTION]",
+            self.test_func_validated,
+            "[FUNCTIONALITY]",
+            self.description,
+            "[HYPOTHESIS]",
+            self.current_hypothesis,
+        )
+        evaluation = self.judge_infer(hypothesis_prompt_filled)
+        # find rating: digit
+        rating_match = re.search(r"rating:\s*(\d+)", evaluation.lower())
+        hypothesis_score = 0.0
+        if rating_match:
+            rating = int(rating_match.group(1))
+            hypothesis_score = rating / 9.0  # normalize to [0, 1]
+        else:
+            return 0.0
+        termination_score = 0
+        if decision.lower() == "yes":
+            if hypothesis_score > 0.7:
+                termination_score = 1.0
+            else:
+                termination_score = -1.0
+        else:
+            if hypothesis_score < 0.3:
+                termination_score = 1.0
+        clean_parse_score = 1 if clean_parse else -1.0
+        total_score = hypothesis_score + termination_score + clean_parse_score
+        return total_score
+
+    def get_reasoning_reward(self, reasoning: str):
+        reasoning_prompt_filled = self.judge_reasoning_prompt.replace(
+            "[FUNCTION]",
+            self.test_func_validated,
+            "[FUNCTIONALITY]",
+            self.description,
+            "[HYPOTHESIS]",
+            self.current_hypothesis,
+            "[REASONING]",
+            reasoning,
+        )
+        evaluation = self.judge_infer(reasoning_prompt_filled)
+        # find rating: digit
+        rating_match = re.search(r"rating:\s*(\d+)", evaluation.lower())
+        reasoning_score = 0.0
+        if rating_match:
+            rating = int(rating_match.group(1))
+            reasoning_score = rating / 9.0  # normalize to [0, 1]
+        else:
+            return 0.0
+        return reasoning_score
+
+    def step(self, action: str) -> BaseTextEnvStepOutput:
+        self.turns += 1
+
+        answer = self._parse_action(action)
+
+        is_correct = answer is not None and answer.strip() == str(self.ground_truth).strip()
+        found_boxed = answer is not None
+
+        done = np.random.rand() < 0.2  # Randomly end the episode with a small probability to prevent infinite episodes during training
+        reward = np.random.rand() # Small random reward to encourage exploration
+        feedback = "Please do something broski"
+
+        new_obs = {"role": "user", "content": feedback}
+
+        return BaseTextEnvStepOutput(observations=[new_obs], reward=reward, done=done, metadata={"parsed_answer": answer})

@@ -66,6 +66,6 @@ source configs/config.env
 { echo "export NUM_GPUS=${ARGS["n"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
 
 mkdir -p SkyRL/skyrl-train/examples/function_discovery/
-rm SkyRL/skyrl-train/examples/function_discovery/*
+rm -rf SkyRL/skyrl-train/examples/function_discovery/*
 cp -r scripts/skyrl/* SkyRL/skyrl-train/examples/function_discovery/
 echo "Copied training scripts to SkyRL/skyrl-train/examples/function_discovery/"
