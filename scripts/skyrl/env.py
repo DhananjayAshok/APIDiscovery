@@ -229,10 +229,8 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         self.description = extras["description"]
         self.train_inputs = extras["train_inputs"]
         self.test_inputs = extras["test_inputs"]
-        self.max_turns = extras["max_turns"] if "max_turns" in extras else 40
-        self.max_previous_results = (
-            extras["max_previous_results"] if "max_previous_results" in extras else 5
-        )
+        self.max_turns = 40
+        self.max_previous_results = 5
         self.runner = RunTestFunc(self.test_func_validated)
         func_code = self.test_func_validated
         header_start = func_code.index("def test_func(")
@@ -371,7 +369,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             prompt = self.reasoning_prompt_filled.replace(
                 "[PREV]", self.get_prev_results_str()
             ).replace("[HYPOTHESIS]", self.current_hypothesis)
-            new_obs = {"role": "system", "content": prompt}
+            new_obs = {"role": "user", "content": prompt}
             self.turn_kind = "input"
             return BaseTextEnvStepOutput(
                 observations=[new_obs],
@@ -388,7 +386,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                     "[REASONING]", action
                 )  # TODO: check that this is reasoning output.
             )
-            new_obs = {"role": "system", "content": prompt}
+            new_obs = {"role": "user", "content": prompt}
             reward = self.get_reasoning_reward(action)
             self.turn_kind = "reflection"
             return BaseTextEnvStepOutput(
@@ -422,7 +420,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                 .replace("[LAST_INPUTS]", last_input_str)
                 .replace("[REASONING]", self.previous_reasoning)
             )
-            new_obs = {"role": "system", "content": prompt}
+            new_obs = {"role": "user", "content": prompt}
             self.turn_kind = "reasoning"
             return BaseTextEnvStepOutput(
                 observations=[new_obs],
@@ -430,3 +428,8 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                 done=False,
                 metadata={},
             )
+
+
+
+
+#################################### Code from the Examples Below: ################################################
