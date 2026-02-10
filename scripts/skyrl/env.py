@@ -669,12 +669,6 @@ class FunctionDiscoveryEnv(BaseTextEnv):
 
     def step(self, action: str) -> BaseTextEnvStepOutput:
         self.turns += 1
-
-        answer = self._parse_action(action)
-
-        is_correct = answer is not None and answer.strip() == str(self.ground_truth).strip()
-        found_boxed = answer is not None
-
         done = np.random.rand() < 0.2  # Randomly end the episode with a small probability to prevent infinite episodes during training
         reward = np.random.rand() # Small random reward to encourage exploration
         feedback = "Please do something broski"
