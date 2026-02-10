@@ -25,43 +25,9 @@ def get_save_paths(dataset_name, save_name):
     return save_path
 
 
-def zero_shot(
-    func_code: str, examples: tuple, model, max_iterations=100, max_previous_results=10
-):
-    runner = RunTestFunc(func_code)
-    header_start = func_code.index("def test_func(")
-    header_end = func_code.index("\n", header_start)
-    func_header = func_code[header_start:header_end]
-
-    prev_results = []
-    example_outputs = []
-    for example in examples:
-        example_outputs.append(runner.run_test_str(example))
-
-    for i, example_input in enumerate(examples):
-        input_str = example_input
-        output, err = example_outputs[i]
-        prev_results.append((input_str, output, err))
-    concluded = False
-
-    def get_prev_results_str():
-        if not prev_results:
-            return "[]"
-        results_str = "[\n"
-        to_slice = (
-            prev_results[-max_previous_results:]
-            if max_previous_results is not None
-            else prev_results
-        )
-        for inp, out, err in to_slice:
-            results_str += f"  Input: {inp} => Output: {out}, Error: {err}\n"
-        results_str += "]"
-        return results_str
-
-    hypothesis = "Not yet formed"
-    reasoning_prompt = f"""
+first_reasoning_prompt = f"""
 You are given a Python function with the following header:
-{func_header}
+[HEADER]
 Your task is to try various inputs to discover what this function does.
 
 So far, you have tried the following inputs: [PREV]
@@ -72,6 +38,46 @@ Your response should be extremely short and concise, just a few sentences. After
 Now provide your reasoning below and then say [STOP]
 Reasoning:"""
 
+def get_prev_results_str(prev_results, max_previous_results):
+    if not prev_results:
+        return "[]"
+    results_str = "[\n"
+    to_slice = (
+        prev_results[-max_previous_results:]
+        if max_previous_results is not None
+        else prev_results
+    )
+    for inp, out, err in to_slice:
+        results_str += f"  Input: {inp} => Output: {out}, Error: {err}\n"
+    results_str += "]"
+    return results_str
+
+def get_initial_results(func_code, examples):
+    try:
+        runner = RunTestFunc(func_code)
+    except:
+        return None, None
+    prev_results = []
+    example_outputs = []
+    for example in examples:
+        example_outputs.append(runner.run_test_str(example))
+    for i, example_input in enumerate(examples):
+        input_str = example_input
+        output, err = example_outputs[i]
+        prev_results.append((input_str, output, err))
+    return prev_results, runner
+
+def zero_shot(
+    func_code: str, examples, model, max_iterations=100, max_previous_results=10
+):
+    header_start = func_code.index("def test_func(")
+    header_end = func_code.index("\n", header_start)
+    func_header = func_code[header_start:header_end]
+    
+    runner, prev_results = get_initial_results(func_code, examples)
+    concluded = False
+    hypothesis = "Not yet formed"
+    reasoning_prompt = first_reasoning_prompt.replace("[HEADER]", func_header)
     input_prompt = f"""
 You are given a Python function with the following header:
 {func_header}
@@ -108,7 +114,7 @@ Summary: <your extremely concise summary or brief revised hypothesis here>
 Now, provide your conclusion below, remember to say [STOP] after your summary.
 Hypothesis Conclusion: """
     for i in tqdm(range(max_iterations), desc="Function Discovery", leave=False):
-        prev_results_str = get_prev_results_str()
+        prev_results_str = get_prev_results_str(prev_results, max_previous_results)
         prompt = reasoning_prompt.replace("[PREV]", prev_results_str).replace(
             "[HYPOTHESIS]", hypothesis
         )

@@ -1319,21 +1319,19 @@ def merge_final(parameters):
 )
 @click.pass_obj
 def load_parquets(parameters, dataset_name, train_val_split):
-    reasoning_prompt = f"""
-    You are given a Python function with the following header:
-    [HEADER]
-    Your task is to try various inputs to discover what this function does.
-    Based on this, what kind of input will you use to test the function with next? Very briefly describe your next intended input only, and the properties it satisfies. How does this input help test the hypothesis? What is the expected output? Be extremely concise and short. 
-    Your response should be extremely short and concise, just a few sentences. After the response, say [STOP]
-    Now provide your reasoning below and then say [STOP]
-    Reasoning:"""
-
-    def get_prompt(test_func_validated):
+    from baselines import first_reasoning_prompt, get_prev_results_str, get_initial_results
+    def get_first_prompt(row):
+        test_func_validated = row["test_func_validated"]
         header_start = test_func_validated.index("def test_func(")
         header_end = test_func_validated.index("\n", header_start)
         func_header = test_func_validated[header_start:header_end]
-        prompt = reasoning_prompt.replace("[HEADER]", func_header)
-        return prompt
+        reasoning_prompt = first_reasoning_prompt.replace("[HEADER]", func_header).replace("[HYPOTHESIS]", "Not yet formed")
+        prev_results, runner = get_initial_results(test_func_validated, examples=row["train_inputs"])
+        if runner is None:
+            return None
+        prev_results_str = get_prev_results_str(prev_results, max_previous_results=None)
+        reasoning_prompt = reasoning_prompt.replace("[PREV]", prev_results_str)
+        return reasoning_prompt
 
     splits = []
     if dataset_name in TEST_DATASETS + ["all"]:
@@ -1348,8 +1346,13 @@ def load_parquets(parameters, dataset_name, train_val_split):
             split=split,
         )
         dataset = dataset.map(
-            lambda x: {"prompt": get_prompt(x["test_func_validated"])}
+            lambda x: {"prompt": [{"role": "user", "content": get_first_prompt(x)}]}
         )
+        dataset_length = len(dataset)
+        #drop rows where prompt is None
+        dataset = dataset.filter(lambda x: x["prompt"] is not None)
+        if len(dataset) < dataset_length:
+            log_warn(f"Dropped {dataset_length - len(dataset)}/{dataset_length} rows with invalid prompts for {dataset_name} split {split}", parameters=parameters)
         if split == "test":
             dataset.to_parquet(parquet_path + f"test.parquet")
         else:
