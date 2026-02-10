@@ -1329,6 +1329,9 @@ def load_parquets(parameters, dataset_name, train_val_split):
         prev_results, runner = get_initial_results(test_func_validated, examples=row["train_inputs"])
         if runner is None:
             return None
+        for inp_str, out_str, err_str in prev_results:
+            if err_str is not None:
+                return None
         prev_results_str = get_prev_results_str(prev_results, max_previous_results=None)
         reasoning_prompt = reasoning_prompt.replace("[PREV]", prev_results_str)
         return reasoning_prompt
