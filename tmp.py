@@ -127,3 +127,7 @@ class RunTestFunc:
         if not isinstance(args, tuple) and not isinstance(args, list):
             args = (args,)  # for single argument functions
         return self.run_test(*args)
+    
+runner = RunTestFunc(test_func) 
+result = runner.run_test_str(examples[0])
+breakpoint()
