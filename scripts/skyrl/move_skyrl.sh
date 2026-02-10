@@ -59,12 +59,11 @@ python configs/create_env_file.py
 source configs/config.env
 
 # copy the contents of configs/config.env and prepend it to the front of scripts/skyrl/run_rl.sh
-{ cat "configs/config.env"; cat scripts/skyrl/run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/run_rl.sh
-{ echo "export DATA_DIR=$storage_dir/data/parquets/${ARGS["d"]}"; cat scripts/skyrl/run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/run_rl.sh
-{  echo "export trainer_policy_model=${ARGS["m"]}"; cat scripts/skyrl/run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/run_rl.sh
-{ echo "export run_name=${ARGS["r"]}"; cat scripts/skyrl/run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/run_rl.sh
-{ echo "export NUM_GPUS=${ARGS["n"]}"; cat scripts/skyrl/run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/run_rl.sh
-
+{ cat "configs/config.env"; cat scripts/skyrl/run_rl.sh; } > scripts/skyrl/final_run_rl.sh
+{ echo "export DATA_DIR=$storage_dir/data/parquets/${ARGS["d"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
+{  echo "export trainer_policy_model=${ARGS["m"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
+{ echo "export run_name=${ARGS["r"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
+{ echo "export NUM_GPUS=${ARGS["n"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
 
 mkdir -p SkyRL/skyrl-train/examples/function_discovery/
 rm SkyRL/skyrl-train/examples/function_discovery/*
