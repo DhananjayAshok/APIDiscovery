@@ -29,26 +29,24 @@ class RunTestFunc:
         self.access_counter = 0
         self.attempted_inputs = []
         self.received_outputs = []
-        self.timeout = timeout
+        self.timeout = timeout        
         success = self.try_exec(func_code)
-        locals = {}
-        global_dict = globals().copy()
+        self._context = {"__builtins__": __builtins__}
         if success:
-            exec(func_code, global_dict, locals)
+            exec(func_code, self._context)
+            self.test_func = self._context["test_func"]
         else:
-            raise RuntimeError(
-                "Failed to exec function code, cannot initialize RunTestFunc."
-            )
-        self.test_func = locals["test_func"]
+            raise RuntimeError("Failed to exec function code, cannot initialize RunTestFunc.")
+
 
     @staticmethod
     def exec_worker(func_code, queue):
         """Helper worker to run exec and put the result in a queue."""
         try:
-            exec(func_code, globals())
-            queue.put(True)  # runs
+            exec(func_code, {"__builtins__": __builtins__})
+            queue.put(True) # runs
         except Exception as e:
-            queue.put(False)  # fails
+            queue.put(False) # fails
 
     def try_exec(self, func_code):
         """Tries to exec the given code in a separate process with a timeout."""
@@ -64,8 +62,7 @@ class RunTestFunc:
             return queue.get()
         return False
 
-    @staticmethod
-    def worker(func, args, queue):
+    def worker(self, func, args, queue):
         """Helper worker to run the function and put the result in a queue."""
         try:
             result = func(*args)

@@ -1,6 +1,7 @@
 from ast import literal_eval
 from utils import log_warn, log_info, load_parameters, file_makedir, log_error
 from tqdm import tqdm
+import deepcopy
 import pandas as pd
 import click
 import os
@@ -28,19 +29,19 @@ class RunTestFunc:
         self.received_outputs = []
         self.timeout = timeout        
         success = self.try_exec(func_code)
-        locals = {}
-        global_dict = globals().copy()
+        self._context = {"__builtins__": __builtins__}
         if success:
-            exec(func_code, global_dict, locals)
+            exec(func_code, self._context)
+            self.test_func = self._context["test_func"]
         else:
             raise RuntimeError("Failed to exec function code, cannot initialize RunTestFunc.")
-        self.test_func = locals["test_func"]
+
 
     @staticmethod
     def exec_worker(func_code, queue):
         """Helper worker to run exec and put the result in a queue."""
         try:
-            exec(func_code, globals())
+            exec(func_code, {"__builtins__": __builtins__})
             queue.put(True) # runs
         except Exception as e:
             queue.put(False) # fails
@@ -59,8 +60,7 @@ class RunTestFunc:
             return queue.get()
         return False
 
-    @staticmethod
-    def worker(func, args, queue):
+    def worker(self, func, args, queue):
         """Helper worker to run the function and put the result in a queue."""
         try:
             result = func(*args)
