@@ -30,9 +30,10 @@ fi
 trainer_ckpt_path=$storage_dir/models/$run_name/ckpt
 trainer_export_path=$storage_dir/models/$run_name/final_checkpoint/
 
-source $skyrl_env_dir/bin/activate
+source $skyrl_env_dir/bin/activate || { echo "Failed to activate virtual environment at $skyrl_env_dir. Check that the path is correct and that the virtual environment is set up properly."; exit 1; }
+uv pip install torch-c-dlpack-ext
 cd SkyRL/skyrl-train || { echo "SkyRL/skyrl-train directory not found. Make sure the path is correct."; exit 1; }
-python -m examples.function_discovery.rl_main \
+HYDRA_FULL_ERROR=1 python -m examples.function_discovery.rl_main \
   data.train_data="['$DATA_DIR/train.parquet']" \
   data.val_data="['$DATA_DIR/val.parquet']" \
   trainer.algorithm.advantage_estimator="grpo" \
