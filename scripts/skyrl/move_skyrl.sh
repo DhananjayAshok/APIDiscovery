@@ -68,4 +68,5 @@ source configs/config.env
 mkdir -p SkyRL/skyrl-train/examples/function_discovery/
 rm -rf SkyRL/skyrl-train/examples/function_discovery/*
 cp -r scripts/skyrl/* SkyRL/skyrl-train/examples/function_discovery/
-echo "Copied training scripts to SkyRL/skyrl-train/examples/function_discovery/"
+echo "Copied training scripts to SkyRL/skyrl-train/examples/function_discovery/ Now, you can run the training with the following command:"
+echo "bash SkyRL/skyrl-train/examples/function_discovery/final_run_rl.sh

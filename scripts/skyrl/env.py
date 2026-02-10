@@ -212,6 +212,14 @@ class FunctionDiscoveryEnv(BaseTextEnv):
     [STOP]
     """
 
+    def length_penalty(self, response, threshold, penalty_rate):
+        # penalize length over threshold at a rate of penalty_rate per token
+        num_tokens = len(response.split())
+        if num_tokens > threshold:
+            return -penalty_rate * (num_tokens - threshold)
+        else:
+            return 0.0
+    
     def __init__(
         self,
         env_config: Dict[str, Any] = {},
@@ -375,7 +383,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                     hypothesis = action.lower()
                     decision = "no"
                 self.current_hypothesis = hypothesis
-                reward = self.get_hypothesis_reward(decision, clean_parse)
+                reward = self.get_hypothesis_reward(decision, clean_parse) + self.length_penalty(action, threshold=100, penalty_rate=0.05)
             prompt = self.reasoning_prompt_filled.replace(
                 "[PREV]", self.get_prev_results_str()
             ).replace("[HYPOTHESIS]", self.current_hypothesis)
@@ -397,7 +405,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                 )  # TODO: check that this is reasoning output.
             )
             new_obs = {"role": "user", "content": prompt}
-            reward = self.get_reasoning_reward(action)
+            reward = self.get_reasoning_reward(action) + self.length_penalty(action, threshold=100, penalty_rate=0.05)
             self.turn_kind = "reflection"
             return BaseTextEnvStepOutput(
                 observations=[new_obs],
@@ -434,7 +442,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             self.turn_kind = "reasoning"
             return BaseTextEnvStepOutput(
                 observations=[new_obs],
-                reward=0.1 if ret is not None else -0.1,
+                reward=0.1 if ret is not None else -0.1 + self.length_penalty(suggested_inputs, threshold=30, penalty_rate=0.5), # input should be super short.
                 done=False,
                 metadata={},
             )
