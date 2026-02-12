@@ -16,6 +16,7 @@ from loguru import logger
 PARSE_FAILURE_PENALTY = 0.5
 MAX_LENGTH_PENALTY = 1.0 # Really go hardcore on Qwen3, it needs to shut up. 
 HYPOTHESIS_SCALE = 2.0 # scale the hypothesis reward to ensure it is the dominant factor in the reward signal
+VERBOSE = True
 
 
 def neg(x):
@@ -283,7 +284,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         if openai_api_key is None:
             raise ValueError("`OPENAI_API_KEY` must be set for Llm as a judge env")
         self.llm_judge_client = OpenAI(
-            base_url=env_config.base_url, api_key=openai_api_key
+            api_key=openai_api_key
         )
         self.model = env_config.model
 
@@ -296,7 +297,8 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         text = response.output_text
         if "[STOP]" in text:
             text = text.split("[STOP]")[0]
-        # logger.info(f"LLM Judge Prompt:\n{prompt}\nLLM Judge Response:\n{text}")
+        if VERBOSE:
+            logger.info(f"LLM Judge Prompt:\n{prompt}\nLLM Judge Response:\n{text}")
         return text.strip()
 
     def get_prev_results_str(self):
@@ -375,7 +377,8 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                 metadata={"error": "Test function code failed to execute, cannot run environment."},
             )
         self.turns += 1
-        # logger.info(f"Step {self.turns}, Action: {action}, Turn Kind: {self.turn_kind}")
+        if VERBOSE:
+            logger.info(f"Step {self.turns}, Action: {action}, Turn Kind: {self.turn_kind}")
         if self.turns >= self.max_turns:
             new_obs = {"role": "user", "content": "Timeout"}
             return BaseTextEnvStepOutput(
@@ -403,7 +406,8 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             if not clean_parse:
                 reward = neg(PARSE_FAILURE_PENALTY)
             reward += self.get_hypothesis_reward(done, clean_parse) + self.length_penalty(action, threshold=100, penalty_rate=0.05)
-            # logger.info(f"Output: {action}\nHypothesis: {self.current_hypothesis}, Decision: {decision}, Reward: {reward}")
+            if VERBOSE:
+                logger.info(f"Output: {action}\nHypothesis: {self.current_hypothesis}, Decision: {decision}, Reward: {reward}")
             prompt = self.reasoning_prompt_filled.replace(
                 "[PREV]", self.get_prev_results_str()
             ).replace("[HYPOTHESIS]", self.current_hypothesis)
