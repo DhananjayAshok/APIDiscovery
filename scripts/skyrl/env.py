@@ -9,6 +9,7 @@ from ast import literal_eval
 from openai import OpenAI
 from dataclasses import dataclass
 import numpy as np
+from loguru import logger
 
 
 class RunTestFunc:
