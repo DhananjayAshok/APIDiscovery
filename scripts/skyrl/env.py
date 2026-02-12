@@ -417,7 +417,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                 reward = neg(PARSE_FAILURE_PENALTY)
             else:
                 reward = 0.0 
-            reward += self.get_hypothesis_reward(done, clean_parse) + self.length_penalty(action, threshold=100, penalty_rate=0.05)
+            reward += self.get_hypothesis_reward(done) + self.length_penalty(action, threshold=100, penalty_rate=0.05)
             if VERBOSE:
                 logger.info(f"Output: {action}\nHypothesis: {self.current_hypothesis}, Decision: {decision}, Reward: {reward}")
             prompt = self.reasoning_prompt_filled.replace(
