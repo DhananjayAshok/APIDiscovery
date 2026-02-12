@@ -69,6 +69,7 @@ HYDRA_FULL_ERROR=1 python -m examples.function_discovery.rl_main \
   generator.weight_sync_backend=nccl \
   generator.async_engine=true \
   generator.batched=false \
+  generator.step_wise_trajectories=true \
   environment.env_class=function-discovery \
   generator.n_samples_per_prompt=8 \
   generator.gpu_memory_utilization=0.8 \
