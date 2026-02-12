@@ -4,4 +4,5 @@ figure_force_save: True # Indicates whether the Plotter object should save a fig
 WANDB_PROJECT: "APIDiscovery" # This is more for bash than for within python. Will set the wandb logger to the right project
 #benchmark_creation_model: "Qwen/Qwen3-32B" # Model used to create benchmark tasks
 benchmark_creation_model: "gpt-4o" # Model used to create benchmark tasks
-evaluation_model_name: "gpt-4o-mini" # Model used for evaluation
+benchmark_expansion_model: "meta-llama/Llama-3.1-70B-Instruct" # Model used to expand benchmark examples
+evaluation_model_name: "meta-llama/Llama-3.1-8B-Instruct" # Model used for evaluation

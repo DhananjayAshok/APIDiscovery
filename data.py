@@ -1371,6 +1371,83 @@ def load_parquets(parameters, dataset_name, train_val_split):
         )
 
 
+def expand_dataset_examples(parameters, dataset_name, split):
+    from eval import RunTestFunc
+    dataset = load_dataset(
+        parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset",
+        dataset_name,
+        split=split,
+    )    
+    dataset_df = dataset.to_pandas()
+    # will have columns: test_func_validated, description, train_inputs, test_inputs. We want more test_inputs
+    lm = HuggingFaceModel(parameters["benchmark_expansion_model"])
+    n_examples = {"before": [], "after": [], "invalid": [], "generated": []}
+    for index, row in tqdm(dataset_df.iterrows(), total=len(dataset_df), desc=f"Expanding examples for {dataset_name} split {split}"):
+        test_func_code = row["test_func_validated"]
+        try:
+            runner = RunTestFunc(test_func_code)
+        except:
+            continue
+        description = row["description"]
+        existing_inputs = list(row["test_inputs"]) + list(row["train_inputs"])
+        prompt = f"Here is a Python function:\n{test_func_code}\n\nHere are some example inputs that have been tested to work correctly with this function:\n"
+        for inp in existing_inputs:
+            prompt += f"- {inp}\n"
+        prompt += "Please provide 10 more example inputs that would work correctly with this function. The examples should be diverse and cover different edge cases. Only provide the example inputs without any additional explanation. The examples should be in the format of\n- (arg0, arg1, ...)\n- (arg0, arg1, ...)\nExamples:\n"
+        new_examples = lm.generate(prompt, max_new_tokens=500)
+        new_inputs = []
+        for line in new_examples.split("\n"):
+            line = line.strip()
+            if line.startswith("- "):
+                line = line[2:].strip()
+            if line.startswith("(") and line.endswith(")"):
+                new_inputs.append(line)
+        # add unique new inputs to existing inputs
+        n_candidates = len(new_inputs)
+        clean_inputs = []
+        for inp in new_inputs:
+            ret, err = runner.run_test_str(inp)
+            if err is None:
+                clean_inputs.append(inp)
+        new_inputs = clean_inputs
+        n_examples["generated"].append(n_candidates)
+        n_examples["invalid"].append(n_candidates - len(new_inputs))
+        n_examples["before"].append(len(existing_inputs))        
+        all_inputs = list(set(list(existing_inputs) + new_inputs))
+        n_examples["after"].append(len(all_inputs))
+        dataset_df.at[index, "test_inputs"] = all_inputs
+
+    # log info about how many examples were added on average
+    log_info(f"Expanded examples for {dataset_name} split {split}. On average, the number of test inputs increased from {sum(n_examples['before'])/len(n_examples['before']):.2f} to {sum(n_examples['after'])/len(n_examples['after']):.2f} per entry.", parameters=parameters)    
+    log_info(f"On average, {sum(n_examples['invalid'])/len(n_examples['invalid']):.2f}/{(sum(n_examples['generated'])/len(n_examples['generated'])):.2f} of the new examples per entry were invalid and removed after testing against the function.", parameters=parameters)
+    dataset = Dataset.from_pandas(dataset_df)
+    dataset.push_to_hub(
+        parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset",
+        private=False,
+        split=split,
+        config_name=dataset_name,
+    )
+
+@click.command()
+@click.option(
+    "--dataset_name",
+    required=True,
+    help="The name of the dataset to expand examples for from the Hugging Face Hub.",
+    type=click.Choice(TEST_DATASETS + TRAIN_DATASETS + ["all"]),
+)
+@click.pass_obj
+def expand_examples(parameters, dataset_name):
+    splits = []
+    if dataset_name in TEST_DATASETS + ["all"]:
+        splits.append("test")
+    if dataset_name in TRAIN_DATASETS + ["all"]:
+        splits.append("train")
+    for split in splits:
+        expand_dataset_examples(parameters, dataset_name, split)
+
+        # TODO: expand examples here using the same method as in the mid step, but with a larger max_new_tokens and more aggressive prompting to get more examples. Then save it back to the Hugging Face Hub as a new config.
+
+
 @click.group()
 @click.pass_context
 def main(ctx):
@@ -1382,6 +1459,7 @@ main.add_command(process_raw, name="process_raw")
 main.add_command(process_final, name="process_final")
 main.add_command(merge_final, name="merge_final")
 main.add_command(load_parquets, name="load_parquets")
+main.add_command(expand_examples, name="expand_examples")
 
 if __name__ == "__main__":
     main()
