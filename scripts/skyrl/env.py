@@ -439,7 +439,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             )
         elif self.turn_kind == "reflection":
             suggested_inputs = None
-            options = response.strip().split("\n")
+            options = action.strip().split("\n")
             for opt in options:
                 opt = opt.replace("Input:", "").strip()
                 if "-" in opt and "(" in opt and ")" in opt:  # crude check for valid input format
