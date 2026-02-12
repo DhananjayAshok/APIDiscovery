@@ -318,9 +318,9 @@ class FunctionDiscoveryEnv(BaseTextEnv):
     def get_hypothesis_reward(self, done: bool):
         hypothesis_prompt_filled = self.judge_hypothesis_prompt.replace(
             "[FUNCTION]",
-            self.test_func_validated,
+            self.test_func_validated).replace(
             "[FUNCTIONALITY]",
-            self.description,
+            self.description).replace(
             "[HYPOTHESIS]",
             self.current_hypothesis,
         )
@@ -348,11 +348,11 @@ class FunctionDiscoveryEnv(BaseTextEnv):
     def get_reasoning_reward(self, reasoning: str):
         reasoning_prompt_filled = self.judge_reasoning_prompt.replace(
             "[FUNCTION]",
-            self.test_func_validated,
+            self.test_func_validated).replace(
             "[FUNCTIONALITY]",
-            self.description,
+            self.description).replace(
             "[HYPOTHESIS]",
-            self.current_hypothesis,
+            self.current_hypothesis).replace(
             "[REASONING]",
             reasoning,
         )
