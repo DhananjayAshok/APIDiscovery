@@ -71,6 +71,7 @@ HYDRA_FULL_ERROR=1 python -m examples.function_discovery.rl_main \
   generator.model_dtype="bfloat16" \
   generator.batched=false \
   generator.step_wise_trajectories=true \
+  generator.previous_observation_only=true \
   environment.env_class=function-discovery \
   generator.n_samples_per_prompt=8 \
   generator.gpu_memory_utilization=0.8 \
