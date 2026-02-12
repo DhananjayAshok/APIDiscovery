@@ -16,7 +16,7 @@ class RunTestFunc:
     A class to run a test function defined in code. This differs from the one used in the main code, because of multiprocess spawn vs fork difference when using SkyRL.
     """
 
-    def __init__(self, func_code: str, timeout=0.5):
+    def __init__(self, func_code: str, timeout=2.5):
         """
         Initializes the RunTestFunc with the given function code. Is not safe (i.e. runs exec on func_code, ensure you do not run malicious code through here by mistake).
 
