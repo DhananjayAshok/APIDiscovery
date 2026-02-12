@@ -12,6 +12,15 @@ import numpy as np
 from loguru import logger
 
 
+# All rewards are generally in the range [-1, 1], but hypothesis scaling kinda changes that. 
+PARSE_FAILURE_PENALTY = 0.5
+MAX_LENGTH_PENALTY = 1.0 # Really go hardcore on Qwen3, it needs to shut up. 
+HYPOTHESIS_SCALE = 2.0 # scale the hypothesis reward to ensure it is the dominant factor in the reward signal
+
+
+def neg(x):
+    return -abs(x)
+
 class RunTestFunc:
     """
     A class to run a test function defined in code. This differs from the one used in the main code, because of multiprocess spawn vs fork difference when using SkyRL.
@@ -158,8 +167,8 @@ class FunctionDiscoveryEnv(BaseTextEnv):
     Now, give the exact input to test the function with next.
     The input should be valid Python tuples and your output should follow the format below.
     Suggested Input:
-    (arg0, arg1) [STOP] #(arg0, arg1) should be replaced with actual input values in your response and must be a valid python tuple. This is an example format for a two arg function. You should adjust the number of arguments as per the function definition.
-    Now provide your suggested inputs below and then say [STOP]
+    - (arg0, arg1) [STOP] #(arg0, arg1) should be replaced with actual input values in your response and must be a valid python tuple. This is an example format for a two arg function. You should adjust the number of arguments as per the function definition.
+    Now provide your suggested inputs below, do not say any reasoning or thinking. After saying the suggested input, say [STOP]
     Suggested Input:"""
 
     reflection_prompt = f"""
@@ -214,11 +223,14 @@ class FunctionDiscoveryEnv(BaseTextEnv):
     [STOP]
     """
 
-    def length_penalty(self, response, threshold, penalty_rate):
+    def length_penalty(self, response, threshold, penalty_rate, worst_threshold_multiplier=3):
         # penalize length over threshold at a rate of penalty_rate per token
         num_tokens = len(response.split())
         if num_tokens > threshold:
-            return -penalty_rate * (num_tokens - threshold)
+            penalty = penalty_rate * (num_tokens - threshold)
+            worst_penalty = penalty_rate * (threshold * (worst_threshold_multiplier -1)) # worst case is when response is 3x the threshold, then we want to apply the max penalty.
+            true_penalty = max(penalty / worst_penalty, MAX_LENGTH_PENALTY) # cap the penalty at MAX_LENGTH_PENALTY
+            return neg(true_penalty)
         else:
             return 0.0
     
@@ -284,6 +296,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         text = response.output_text
         if "[STOP]" in text:
             text = text.split("[STOP]")[0]
+        # logger.info(f"LLM Judge Prompt:\n{prompt}\nLLM Judge Response:\n{text}")
         return text.strip()
 
     def get_prev_results_str(self):
@@ -300,7 +313,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         results_str += "]"
         return results_str
 
-    def get_hypothesis_reward(self, decision: str, clean_parse: bool):
+    def get_hypothesis_reward(self, done: bool):
         hypothesis_prompt_filled = self.judge_hypothesis_prompt.replace(
             "[FUNCTION]",
             self.test_func_validated,
@@ -319,7 +332,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         else:
             return 0.0
         termination_score = 0
-        if decision.lower() == "yes":
+        if done:
             if hypothesis_score > 0.7:
                 termination_score = 1.0
             else:
@@ -327,9 +340,8 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         else:
             if hypothesis_score < 0.3:
                 termination_score = 1.0
-        clean_parse_score = 1 if clean_parse else -1.0
-        total_score = hypothesis_score + termination_score + clean_parse_score
-        return total_score
+        total_score = hypothesis_score + termination_score # this can technically exceed 1.0 but whatever bro.
+        return total_score * HYPOTHESIS_SCALE
 
     def get_reasoning_reward(self, reasoning: str):
         reasoning_prompt_filled = self.judge_reasoning_prompt.replace(
@@ -363,25 +375,35 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                 metadata={"error": "Test function code failed to execute, cannot run environment."},
             )
         self.turns += 1
+        # logger.info(f"Step {self.turns}, Action: {action}, Turn Kind: {self.turn_kind}")
+        if self.turns >= self.max_turns:
+            new_obs = {"role": "user", "content": "Timeout"}
+            return BaseTextEnvStepOutput(
+                observations=[new_obs],
+                reward=-1.0,
+                done=True,
+                metadata={"reason": "max_turns_reached"},
+            )
         if self.turn_kind == "reasoning":
-            # TODO: Check first action
-            if action is None:
-                reward = 0.0
-                pass
+            clean_parse = False
+            done = False
+            if action.lower().count("summary:") == 1:
+                decision, summary = (
+                    action.lower().split("summary:")[0].strip(),
+                    action.lower().split("summary:")[1].strip(),
+                )
+                hypothesis = summary
+                clean_parse = True
             else:
-                clean_parse = False
-                if action.lower().count("summary:") == 1:
-                    decision, summary = (
-                        action.lower().split("summary:")[0].strip(),
-                        action.lower().split("summary:")[1].strip(),
-                    )
-                    hypothesis = summary
-                    clean_parse = True
-                else:
-                    hypothesis = action.lower()
-                    decision = "no"
-                self.current_hypothesis = hypothesis
-                reward = self.get_hypothesis_reward(decision, clean_parse) + self.length_penalty(action, threshold=100, penalty_rate=0.05)
+                hypothesis = action.lower()
+                decision = "no"
+            if decision == "yes":
+                done = True
+            self.current_hypothesis = hypothesis
+            if not clean_parse:
+                reward = neg(PARSE_FAILURE_PENALTY)
+            reward += self.get_hypothesis_reward(done, clean_parse) + self.length_penalty(action, threshold=100, penalty_rate=0.05)
+            # logger.info(f"Output: {action}\nHypothesis: {self.current_hypothesis}, Decision: {decision}, Reward: {reward}")
             prompt = self.reasoning_prompt_filled.replace(
                 "[PREV]", self.get_prev_results_str()
             ).replace("[HYPOTHESIS]", self.current_hypothesis)
@@ -390,7 +412,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             return BaseTextEnvStepOutput(
                 observations=[new_obs],
                 reward=reward,
-                done=False,
+                done=done,
                 metadata={},
             )
         elif self.turn_kind == "input":
@@ -415,15 +437,22 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             suggested_inputs = None
             options = response.strip().split("\n")
             for opt in options:
-                if opt.count("Input:") == 1:
-                    opt = opt.split("Input:")[1].strip()
-                if opt.strip() != "":
-                    suggested_inputs = opt
-                    break
+                opt = opt.replace("Input:", "").strip()
+                if "-" in opt and "(" in opt and ")" in opt:  # crude check for valid input format
+                    opt = opt[opt.index("(") : opt.rindex(")") + 1]
+                    if opt.strip() != "":
+                        suggested_inputs = "(" + opt + ",)" # ensure it's a tuple, even if single input
+                        break
             if suggested_inputs is None:  # then empty string
-                last_input_str = "You did not suggest any inputs. Do not do that again."
-            # print(f"Suggested inputs: {suggested_inputs}")
-            ret, err = self.runner.run_test_str(suggested_inputs)
+                suggested_inputs = "INVALID INPUT"
+                reward = neg(PARSE_FAILURE_PENALTY)
+                ret, err = None, "Failed to parse input"
+            else:
+                reward = 0
+                ret, err = self.runner.run_test_str(suggested_inputs)
+                if err is None:
+                    reward += 1/(self.max_turns) # Reward for successfully running the test function with the suggested input, encourages valid inputs.
+                    # scale the reward to ensure it is never higher than the reward for getting a good hypothesis rating. 
             self.prev_results.append((suggested_inputs, ret, err))
             last_input_str = (
                 "Input: " + suggested_inputs + f" => Output: {ret}, Error: {err}"
@@ -440,7 +469,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             self.turn_kind = "reasoning"
             return BaseTextEnvStepOutput(
                 observations=[new_obs],
-                reward=0.1 if ret is not None else -0.1 + self.length_penalty(suggested_inputs, threshold=30, penalty_rate=0.5), # input should be super short.
+                reward=reward + self.length_penalty(suggested_inputs, threshold=30, penalty_rate=0.5), # input should be super short.
                 done=False,
                 metadata={},
             )
