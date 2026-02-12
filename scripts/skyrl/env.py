@@ -10,6 +10,14 @@ from openai import OpenAI
 from dataclasses import dataclass
 import numpy as np
 from loguru import logger
+import sys
+#logger.remove()  # Remove default handler
+#logger.add(
+#    sys.stderr,
+#    level="INFO",  # Change to DEBUG for more verbose output
+#    format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}:{function}:{line}</cyan> - <level>{message}</level>"
+#)
+
 
 
 # All rewards are generally in the range [-1, 1], but hypothesis scaling kinda changes that. 
@@ -205,7 +213,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
     Rating: <a number from 0 to 9>
     [STOP]
     Now, provide your evaluation below, remember to follow the answer format and say [STOP] at the end.
-    Evaluation:
+    Explanation (be extremely concise, no more than a sentence):
     """
 
     judge_reasoning_prompt = f"""
@@ -219,9 +227,11 @@ class FunctionDiscoveryEnv(BaseTextEnv):
     [REASONING]
     How good is this reasoning for testing the hypothesis? Please rate it on a scale of 0 to 9, where 0 means the reasoning is completely ineffective for testing the hypothesis and 9 means the reasoning is extremely effective for testing the hypothesis. Please provide a brief explanation for your rating.
     Answer format:
-    Explanation: <your brief explanation here>
+    Explanation: <your brief explanation here no more than a sentence>
     Rating: <a number from 0 to 9>
     [STOP]
+    Now, provide your evaluation below. Be extremely concise in your explanation, no more than a sentence, and remember to say [STOP] at the end.
+    Explanation: 
     """
 
     def length_penalty(self, response, threshold, penalty_rate, worst_threshold_multiplier=3):
@@ -288,7 +298,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         )
         self.model = "gpt-4o-mini"
 
-    def judge_infer(self, prompt, max_new_tokens=100):
+    def judge_infer(self, prompt, max_new_tokens=300):
         response = self.llm_judge_client.responses.create(
             model=self.model,
             input=prompt,
