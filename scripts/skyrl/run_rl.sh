@@ -37,6 +37,7 @@ HYDRA_FULL_ERROR=1 python -m examples.function_discovery.rl_main \
   data.train_data="['$DATA_DIR/train.parquet']" \
   data.val_data="['$DATA_DIR/val.parquet']" \
   trainer.algorithm.advantage_estimator="grpo" \
+  trainer.max_ckpts_to_keep=3 \
   trainer.policy.model.path=$trainer_policy_model \
   trainer.export_path=$trainer_export_path \
   trainer.ckpt_path=$trainer_ckpt_path \
