@@ -286,7 +286,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         self.llm_judge_client = OpenAI(
             api_key=openai_api_key
         )
-        self.model = env_config.model
+        self.model = "gpt-4o-mini"
 
     def judge_infer(self, prompt, max_new_tokens=100):
         response = self.llm_judge_client.responses.create(
