@@ -13,7 +13,7 @@ import numpy as np
 
 class RunTestFunc:
     """
-    A class to run a test function defined in code.
+    A class to run a test function defined in code. This differs from the one used in the main code, because of multiprocess spawn vs fork difference when using SkyRL.
     """
 
     def __init__(self, func_code: str, timeout=0.5):
@@ -31,12 +31,10 @@ class RunTestFunc:
         self.received_outputs = []
         self.timeout = timeout        
         success = self.try_exec(func_code)
-        self._context = {"__builtins__": __builtins__}
         if success:
-            exec(func_code, self._context)
-            self.test_func = self._context["test_func"]
+            pass
         else:
-            raise RuntimeError("Failed to exec function code, cannot initialize RunTestFunc.")
+            raise RuntimeError("Failed to exec function code, cannot initialize RunTestFunc.") # This should never happen, the dataset should be pre-filtered to ensure exec safety and correctness, but we add this check just in case.
 
 
     @staticmethod
@@ -62,9 +60,12 @@ class RunTestFunc:
             return queue.get()
         return False
 
-    def worker(self, func, args, queue):
+    def worker(self, func_code, args, queue):
         """Helper worker to run the function and put the result in a queue."""
         try:
+            context = {"__builtins__": __builtins__}
+            exec(func_code, context)
+            func = context["test_func"]
             result = func(*args)
             queue.put((result, None))
         except Exception as e:
@@ -77,7 +78,7 @@ class RunTestFunc:
         # Use a Queue to get the return value back from the child process
         queue = multiprocessing.Queue()
         p = multiprocessing.Process(
-            target=self.worker, args=(self.test_func, args, queue)
+            target=self.worker, args=(self.func_code, args, queue)
         )
 
         p.start()
