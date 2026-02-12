@@ -83,7 +83,7 @@ class RunTestFunc:
 
         p.start()
 
-        # Wait
+        # Wait0
         p.join(timeout=self.timeout)
 
         if p.is_alive():
@@ -238,45 +238,41 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         self.test_inputs = extras["test_inputs"]
         self.max_turns = 40
         self.max_previous_results = 5
-        try:
-            self.runner = RunTestFunc(self.test_func_validated)
-        except:
-            self.runner = None
-        if self.runner is not None:
-            func_code = self.test_func_validated
-            header_start = func_code.index("def test_func(")
-            header_end = func_code.index("\n", header_start)
-            func_header = func_code[header_start:header_end]
-            self.func_header = func_header
-            self.reasoning_prompt_filled = self.reasoning_prompt.replace(
-                "[HEADER]", self.func_header
-            )
-            self.input_prompt_filled = self.input_prompt.replace(
-                "[HEADER]", self.func_header
-            )
-            self.reflection_prompt_filled = self.reflection_prompt.replace(
-                "[HEADER]", self.func_header
-            )
-            self.prev_results = []
-            example_outputs = []
-            for example in self.train_inputs:
-                example_outputs.append(self.runner.run_test_str(example))
+        self.runner = RunTestFunc(self.test_func_validated)
+        func_code = self.test_func_validated
+        header_start = func_code.index("def test_func(")
+        header_end = func_code.index("\n", header_start)
+        func_header = func_code[header_start:header_end]
+        self.func_header = func_header
+        self.reasoning_prompt_filled = self.reasoning_prompt.replace(
+            "[HEADER]", self.func_header
+        )
+        self.input_prompt_filled = self.input_prompt.replace(
+            "[HEADER]", self.func_header
+        )
+        self.reflection_prompt_filled = self.reflection_prompt.replace(
+            "[HEADER]", self.func_header
+        )
+        self.prev_results = []
+        example_outputs = []
+        for example in self.train_inputs:
+            example_outputs.append(self.runner.run_test_str(example))
 
-            for i, example_input in enumerate(self.train_inputs):
-                input_str = example_input
-                output, err = example_outputs[i]
-                self.prev_results.append((input_str, output, err))
-            self.concluded = False
-            self.turn_kind = "input"
-            self.current_hypothesis = "First Turn. No hypothesis yet."
-            self.previous_reasoning = None
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            if openai_api_key is None:
-                raise ValueError("`OPENAI_API_KEY` must be set for Llm as a judge env")
-            self.llm_judge_client = OpenAI(
-                base_url=env_config.base_url, api_key=openai_api_key
-            )
-            self.model = env_config.model
+        for i, example_input in enumerate(self.train_inputs):
+            input_str = example_input
+            output, err = example_outputs[i]
+            self.prev_results.append((input_str, output, err))
+        self.concluded = False
+        self.turn_kind = "input"
+        self.current_hypothesis = "First Turn. No hypothesis yet."
+        self.previous_reasoning = None
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if openai_api_key is None:
+            raise ValueError("`OPENAI_API_KEY` must be set for Llm as a judge env")
+        self.llm_judge_client = OpenAI(
+            base_url=env_config.base_url, api_key=openai_api_key
+        )
+        self.model = env_config.model
 
     def judge_infer(self, prompt, max_new_tokens=100):
         response = self.llm_judge_client.responses.create(
