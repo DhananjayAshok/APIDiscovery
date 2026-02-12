@@ -415,6 +415,8 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             self.current_hypothesis = hypothesis
             if not clean_parse:
                 reward = neg(PARSE_FAILURE_PENALTY)
+            else:
+                reward = 0.0 
             reward += self.get_hypothesis_reward(done, clean_parse) + self.length_penalty(action, threshold=100, penalty_rate=0.05)
             if VERBOSE:
                 logger.info(f"Output: {action}\nHypothesis: {self.current_hypothesis}, Decision: {decision}, Reward: {reward}")
