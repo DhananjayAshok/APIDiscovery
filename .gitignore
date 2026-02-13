@@ -175,3 +175,4 @@ cython_debug/
 
 setup/.venv
 configs/config.env
+scripts/skyrl/final_run_rl.sh
