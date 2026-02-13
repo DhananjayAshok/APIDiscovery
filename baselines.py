@@ -74,7 +74,7 @@ def zero_shot(
     header_end = func_code.index("\n", header_start)
     func_header = func_code[header_start:header_end]
     
-    runner, prev_results = get_initial_results(func_code, examples)
+    prev_results, runner = get_initial_results(func_code, examples)
     concluded = False
     hypothesis = "Not yet formed"
     reasoning_prompt = first_reasoning_prompt.replace("[HEADER]", func_header)
