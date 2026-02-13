@@ -24,7 +24,7 @@ import sys
 PARSE_FAILURE_PENALTY = 0.5
 MAX_LENGTH_PENALTY = 1.0 # Really go hardcore on Qwen3, it needs to shut up. 
 HYPOTHESIS_SCALE = 2.0 # scale the hypothesis reward to ensure it is the dominant factor in the reward signal
-VERBOSE = True
+VERBOSE = False
 
 
 def neg(x):
@@ -262,41 +262,45 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         self.test_inputs = extras["test_inputs"]
         self.max_turns = 40
         self.max_previous_results = 5
-        self.runner = RunTestFunc(self.test_func_validated)
-        func_code = self.test_func_validated
-        header_start = func_code.index("def test_func(")
-        header_end = func_code.index("\n", header_start)
-        func_header = func_code[header_start:header_end]
-        self.func_header = func_header
-        self.reasoning_prompt_filled = self.reasoning_prompt.replace(
-            "[HEADER]", self.func_header
-        )
-        self.input_prompt_filled = self.input_prompt.replace(
-            "[HEADER]", self.func_header
-        )
-        self.reflection_prompt_filled = self.reflection_prompt.replace(
-            "[HEADER]", self.func_header
-        )
-        self.prev_results = []
-        example_outputs = []
-        for example in self.train_inputs:
-            example_outputs.append(self.runner.run_test_str(example))
+        try:
+            self.runner = RunTestFunc(self.test_func_validated)
+            func_code = self.test_func_validated
+            header_start = func_code.index("def test_func(")
+            header_end = func_code.index("\n", header_start)
+            func_header = func_code[header_start:header_end]
+            self.func_header = func_header
+            self.reasoning_prompt_filled = self.reasoning_prompt.replace(
+                "[HEADER]", self.func_header
+            )
+            self.input_prompt_filled = self.input_prompt.replace(
+                "[HEADER]", self.func_header
+            )
+            self.reflection_prompt_filled = self.reflection_prompt.replace(
+                "[HEADER]", self.func_header
+            )
+            self.prev_results = []
+            example_outputs = []
+            for example in self.train_inputs:
+                example_outputs.append(self.runner.run_test_str(example))
 
-        for i, example_input in enumerate(self.train_inputs):
-            input_str = example_input
-            output, err = example_outputs[i]
-            self.prev_results.append((input_str, output, err))
-        self.concluded = False
-        self.turn_kind = "input"
-        self.current_hypothesis = "First Turn. No hypothesis yet."
-        self.previous_reasoning = None
-        openai_api_key = os.getenv("OPENAI_API_KEY")
-        if openai_api_key is None:
-            raise ValueError("`OPENAI_API_KEY` must be set for Llm as a judge env")
-        self.llm_judge_client = OpenAI(
-            api_key=openai_api_key
-        )
-        self.model = "gpt-4o-mini"
+            for i, example_input in enumerate(self.train_inputs):
+                input_str = example_input
+                output, err = example_outputs[i]
+                self.prev_results.append((input_str, output, err))
+            self.concluded = False
+            self.turn_kind = "input"
+            self.current_hypothesis = "First Turn. No hypothesis yet."
+            self.previous_reasoning = None
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if openai_api_key is None:
+                raise ValueError("`OPENAI_API_KEY` must be set for Llm as a judge env")
+            self.llm_judge_client = OpenAI(
+                api_key=openai_api_key
+            )
+            self.model = "gpt-4o-mini"
+        except:
+            self.runner = None
+
 
     def judge_infer(self, prompt, max_new_tokens=300):
         response = self.llm_judge_client.responses.create(
