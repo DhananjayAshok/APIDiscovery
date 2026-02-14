@@ -140,7 +140,7 @@ Hypothesis Conclusion: """
         ret, err = runner.run_test_str(suggested_inputs)
         prev_results.append((suggested_inputs, ret, err))
         last_input_str = (
-            "Input: " + suggested_inputs + f" => Output: {ret}, Error: {err}"
+            "Input: " + suggested_inputs if suggested_inputs is not None else "None" + f" => Output: {ret}, Error: {err}"
         )
         reflection = (
             reflection_prompt.replace("[PREV]", prev_results_str)

@@ -1291,7 +1291,7 @@ def merge_final(parameters):
         for dataset_name in options:
             dataset = load_dataset(
                 parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset",
-                dataset_name=dataset_name,
+                dataset_name,
                 split=split,
             )
             all_datasets.append(dataset)
@@ -1302,6 +1302,29 @@ def merge_final(parameters):
             split=split,
             config_name="all",
         )
+
+@click.command()
+@click.pass_obj
+def get_final(parameters):
+    for split, options in [("test", TEST_DATASETS), ("train", TRAIN_DATASETS)]:
+        for dataset_name in options + ["all"]:
+            try:
+                dataset = load_dataset(
+                    parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset",
+                    dataset_name,
+                    split=split,
+                )    
+            except Exception as e:
+                if dataset_name == "all":
+                    log_warn(f"Tried to get all, maybe you haven't run merge_final yet? Skipping...", parameters=parameters)
+                    continue
+                else:
+                    log_error(f"Could not load dataset {dataset_name} split {split} from Hugging Face Hub. Make sure you have run the previous steps to process and push the dataset to the hub.\n{e}", parameters=parameters)
+            df = dataset.to_pandas()
+            df.to_json(f"{parameters['data_dir']}/final/{dataset_name}/{split}_filtered.jsonl", orient="records", lines=True)
+            log_info(f"Saved final dataset {dataset_name} split {split} to {parameters['data_dir']}/final/{dataset_name}/{split}_filtered.jsonl", parameters=parameters)
+            df.to_csv(f"{parameters['data_dir']}/final/{dataset_name}/{split}_filtered.csv", index=False)
+            log_info(f"Saved final dataset {dataset_name} split {split} to {parameters['data_dir']}/final/{dataset_name}/{split}_filtered.csv", parameters=parameters)
 
 
 @click.command()
@@ -1458,6 +1481,7 @@ def main(ctx):
 main.add_command(process_raw, name="process_raw")
 main.add_command(process_final, name="process_final")
 main.add_command(merge_final, name="merge_final")
+main.add_command(get_final, name="get_final")
 main.add_command(load_parquets, name="load_parquets")
 main.add_command(expand_examples, name="expand_examples")
 
