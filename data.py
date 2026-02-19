@@ -501,6 +501,7 @@ def decode_shift(s: str):
         max_new_tokens,
         parameters,
         model=None,
+        ignore_checkpoint=False
     ):
         if model is None:
             model = parameters["benchmark_creation_model"]
@@ -509,6 +510,8 @@ def decode_shift(s: str):
             open_ai_batch_name = f"{model}-{run_name}-{dataset_name}-{split}"
         openaibatch_str = "-n " + open_ai_batch_name if open_ai_batch_name != "" else ""
         command_string = f"bash scripts/infer.sh -i {input_file} -o {output_file} -m {model} -c {input_column} -d {output_column} -t {max_new_tokens} -g {run_name} {openaibatch_str}"
+        if ignore_checkpoint:
+            command_string += " -r yes"
         log_info(f"Generating validation code with command: {command_string}")
         subprocess.run(command_string, shell=True, check=True)
         try:

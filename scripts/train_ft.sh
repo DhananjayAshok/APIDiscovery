@@ -64,7 +64,7 @@ for key in "${!ARGS[@]}"; do
 done
 
 save_name="${ARGS["m"]#*/}"
-input_file="$storage_dir/data/final/${ARGS["d"]}/train__filtered.csv"
+input_file="$storage_dir/data/final/${ARGS["d"]}/train_filtered.csv"
 
 
 bash scripts/llm_utils.sh python train.py --training_kind sft --model_name ${ARGS["m"]} --output_dir $storage_dir/models/$save_name-${ARGS["d"]} \
