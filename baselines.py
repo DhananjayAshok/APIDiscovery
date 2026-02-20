@@ -275,7 +275,9 @@ def run_zeroshot(dataset_name, model_name, save_name, override_gen):
                 ]
             )
         df = pd.DataFrame(data=data, columns=columns)
-        df.to_json(save_path, orient="records", lines=True)
+        for column in df:
+            dataset[column] = dataset[column]
+        dataset.to_json(save_path, orient="records", lines=True)
         log_info(f"Saved predictions to {save_path}")
     return save_path
 
