@@ -269,6 +269,10 @@ def evaluate_code_predictions(true_code, predicted_code, test_inputs):
             exact_matches.append(true_output == pred_output)
         else:
             exact_matches.append(False)
+    rep_true_outputs = [repr(out) for out, err in true_outputs]
+    rep_pred_outputs = [repr(out) for out, err in predicted_outputs]
+    ret[2] = rep_true_outputs
+    ret[3] = rep_pred_outputs
     ret[-1] = sum(exact_matches) / len(exact_matches) if len(exact_matches) > 0 else 0.0
     return ret
 
