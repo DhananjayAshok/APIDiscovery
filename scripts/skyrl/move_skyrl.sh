@@ -3,17 +3,18 @@
 declare -A ARGS
 ARGS["d"]="code_alpaca"   # padding default
 ARGS["n"]="4" # Number of devices
+ARGS["r"]="" # defaults to the model name if not provided
 
 # Required arguments
-REQUIRED_ARGS=("m" "r")
+REQUIRED_ARGS=("m")
 
 # Help function
 usage() {
     echo "Usage: $0 -m model_name -r run_name [-d dataset_name -n num_gpus]"
     echo "Required:"
     echo "  -m model_name     Name of the model to use"
-    echo "  -r run_name       Name of the training run (used for logging and checkpoints)"
     echo "Options:"
+    echo "  -r run_name       Name of the training run (Defaults to model_name if not provided)"
     echo "  -d dataset_name    Name of the dataset to use"
     echo "  -n num_gpus        Number of GPUs to use"
     exit 1

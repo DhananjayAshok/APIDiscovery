@@ -13,8 +13,8 @@ if [ -z "$trainer_policy_model" ]; then
   exit 1
 fi
 if [ -z "$run_name" ]; then
-  echo "Error: run_name is not set"
-  exit 1
+  echo "Warning: run_name is not set. Setting run_name to" $(basename $trainer_policy_model)
+  run_name=$(basename $trainer_policy_model)
 fi
 if [ -z "$NUM_GPUS" ]; then
   echo "Error: NUM_GPUS is not set"
@@ -79,3 +79,5 @@ HYDRA_FULL_ERROR=1 python -m examples.function_discovery.rl_main \
   trainer.project_name="function_discovery" \
   trainer.run_name="$run_name" \
   $@
+
+python examples/function_discovery/adapter_to_model.py $trainer_policy_model $trainer_export_path
