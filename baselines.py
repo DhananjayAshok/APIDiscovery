@@ -1,6 +1,6 @@
 from utils.lm_inference import HuggingFaceModel, OpenAIModel
 import os
-from utils import load_parameters, log_info, file_makedir, log_warn
+from utils import load_parameters, log_info, file_makedir, log_warn, log_error
 import click
 from datasets import load_dataset
 from data import RawLoaders
@@ -268,6 +268,7 @@ def run_zeroshot(dataset_name, model_name, save_name, override_gen):
             predicted_description, n_queries, concluded, steps, all_examples = (
                 zero_shot(test_func_str, examples, model)
             )
+            repr_examples = repr(all_examples)
             data.append(
                 [
                     test_func_str,
@@ -276,7 +277,7 @@ def run_zeroshot(dataset_name, model_name, save_name, override_gen):
                     concluded,
                     predicted_description,
                     steps,
-                    all_examples,
+                    repr_examples,
                 ]
             )
         df = pd.DataFrame(data=data, columns=columns)
@@ -379,17 +380,37 @@ def run_eval_code(
     )
     return df
 
+def get_all_examples_str(row):
+    if "all_examples" in row:
+        examples = eval(row["all_examples"])
+        examples = [
+            f"Input: {examples[i][0]} => Output: {examples[i][1]}, Error: {examples[i][2]}" 
+            for i in range(len(examples))
+            ]
+    else:
+        examples = row["train_inputs"]
+        if isinstance(examples, str):
+            examples = eval(examples)
+        test_func_code = row["test_func_validated"]
+        example_outputs = []
+        try:
+            runner = RunTestFunc(test_func_code)
+            for example in examples:
+                example_outputs.append(runner.run_test_str(example))
+        except:
+            log_warn(
+                f"Could not run test function for row {row}. This should never happen."
+            )
+            return None
+        examples = [
+            f"Input: {examples[i]} => Output: {example_outputs[i][0]}, Error: {example_outputs[i][1]}"
+            for i in range(len(examples))
+        ]
+    examples_str = "\n".join(examples)
+    return examples_str
 
-@click.command()
-@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
-@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
-@click.option(
-    "--save_name", type=str, default=None, help="Name to save the predictions under."
-)
-@click.option(
-    "--override_gen", is_flag=True, help="Whether to override existing generation."
-)
-def predict_code(model_name, dataset_name, save_name, override_gen):
+
+def do_predict_code(model_name, dataset_name, save_name, override_gen, prediction_column):
     prediction_file = get_save_paths(dataset_name, save_name)
     save_name = f"{save_name}_code_prediction"
     output_file = get_save_paths(dataset_name, save_name)
@@ -413,30 +434,16 @@ def predict_code(model_name, dataset_name, save_name, override_gen):
         header_start = test_func_str.index("def test_func(")
         header_end = test_func_str.index("\n", header_start)
         func_header = test_func_str[header_start:header_end]
-        if "all_examples" in row:
-            examples = row["all_examples"]
+        examples_str = get_all_examples_str(row)
+        if prediction_column == "prediction":
+            use_description = predicted_description
+        elif prediction_column == "true":
+            use_description = true_description
         else:
-            examples = row["train_inputs"]
-        if isinstance(examples, str):
-            examples = eval(examples)
-        test_func_code = row["test_func_validated"]
-        example_outputs = []
-        try:
-            runner = RunTestFunc(test_func_code)
-            for example in examples:
-                example_outputs.append(runner.run_test_str(example))
-        except:
-            log_warn(
-                f"Could not run test function for row with description: {true_description}. This should never happen."
-            )
-            return None
-        examples = [
-            f"Input: {examples[i]} => Output: {example_outputs[i][0]}, Error: {example_outputs[i][1]}"
-            for i in range(len(examples))
-        ]
-        examples_str = "\n".join(examples)
+            log_error(f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'.")
+
         prompt = (
-            code_prediction_prompt.replace("[DESCRIPTION]", predicted_description)
+            code_prediction_prompt.replace("[DESCRIPTION]", use_description)
             .replace("[HEADER]", func_header)
             .replace("[EXAMPLES]", examples_str)
         )
@@ -456,6 +463,19 @@ def predict_code(model_name, dataset_name, save_name, override_gen):
         output_column="predicted_code_output",
         max_new_tokens=600,
     )
+
+@click.command()
+@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
+@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
+@click.option(
+    "--save_name", type=str, default=None, help="Name to save the predictions under."
+)
+@click.option(
+    "--override_gen", is_flag=True, help="Whether to override existing generation."
+)
+def predict_code(model_name, dataset_name, save_name, override_gen):
+    do_predict_code(model_name, dataset_name, save_name, override_gen, prediction_column="prediction")
+
 
 
 output_prediction_prompt = """
@@ -575,6 +595,60 @@ def run_eval_output(
     return original_df
 
 
+def do_predict_output(model_name, dataset_name, save_name, override_gen, prediction_column):
+    prediction_file = get_save_paths(dataset_name, save_name)
+    save_name = f"{save_name}_output_prediction"
+    output_file = get_save_paths(dataset_name, save_name)
+    if os.path.exists(output_file) and not override_gen:
+        log_info(
+            f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
+        )
+        return
+    input_file = output_file.replace(".jsonl", "_input.jsonl")
+    intermediate_file = output_file.replace(".jsonl", "_intermediate.jsonl")
+    df = pd.read_json(prediction_file, orient="records", lines=True)
+
+    def make_predict_output_prompt(row):
+        true_description = None
+        if "true_description" in row:
+            true_description = row["true_description"]
+        else:
+            true_description = row["description"]
+        predicted_description = row["predicted_description_clean"]
+        examples_str = get_all_examples_str(row)
+        if prediction_column not in ["prediction", "true"]:
+            log_error(f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'.")
+        use_description = predicted_description if prediction_column == "prediction" else true_description
+        prompt = output_prediction_prompt.replace(
+            "[DESCRIPTION]", use_description
+        ).replace("[EXAMPLES]", examples_str)
+        return prompt
+
+    df["predict_output_prompt"] = df.apply(make_predict_output_prompt, axis=1)
+    # now we need to explode the dataframe so that we have one row per example input-output pair, since we want to predict the output for each example input separately
+    df = df.explode("test_inputs")
+    df["predict_output_prompt"] = df.apply(
+        lambda row: row["predict_output_prompt"].replace(
+            "[INPUT]", f"{row['test_inputs']}"
+        ),
+        axis=1,
+    )
+    run_eval_output(
+        model_name=model_name,
+        dataset_name=dataset_name,
+        save_name=save_name,
+        override_gen=override_gen,
+        input_file=input_file,
+        output_file=output_file,
+        intermediate_file=intermediate_file,
+        df=df,
+        prompt_column="predict_output_prompt",
+        prediction_file=prediction_file,
+        output_column="predicted_output_output",
+        max_new_tokens=300,
+    )
+
+
 def run_eval_input(
     model_name: str,
     dataset_name: str,
@@ -647,96 +721,7 @@ def run_eval_input(
     log_info(f"Saved predicted inputs to {output_file}")
     return original_df
 
-
-@click.command()
-@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
-@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
-@click.option(
-    "--save_name", type=str, default=None, help="Name to save the predictions under."
-)
-@click.option(
-    "--override_gen", is_flag=True, help="Whether to override existing generation."
-)
-def predict_output(model_name, dataset_name, save_name, override_gen):
-    prediction_file = get_save_paths(dataset_name, save_name)
-    save_name = f"{save_name}_output_prediction"
-    output_file = get_save_paths(dataset_name, save_name)
-    if os.path.exists(output_file) and not override_gen:
-        log_info(
-            f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
-        )
-        return
-    input_file = output_file.replace(".jsonl", "_input.jsonl")
-    intermediate_file = output_file.replace(".jsonl", "_intermediate.jsonl")
-    df = pd.read_json(prediction_file, orient="records", lines=True)
-
-    def make_predict_output_prompt(row):
-        true_description = None
-        if "true_description" in row:
-            true_description = row["true_description"]
-        else:
-            true_description = row["description"]
-        predicted_description = row["predicted_description_clean"]
-        if "all_examples" in row:
-            examples = row["all_examples"]
-        else:
-            examples = row["train_inputs"]
-        test_func_code = row["test_func_validated"]
-        example_outputs = []
-        try:
-            runner = RunTestFunc(test_func_code)
-            for example in examples:
-                example_outputs.append(runner.run_test_str(example))
-        except:
-            log_warn(
-                f"Could not run test function for row with description: {true_description}. This should never happen."
-            )
-            return None
-        examples = [
-            f"Input: {examples[i]} => Output: {example_outputs[i][0]}"
-            for i in range(len(examples))
-        ]
-        examples_str = "\n".join(examples)
-        prompt = output_prediction_prompt.replace(
-            "[DESCRIPTION]", predicted_description
-        ).replace("[EXAMPLES]", examples_str)
-        return prompt
-
-    df["predict_output_prompt"] = df.apply(make_predict_output_prompt, axis=1)
-    # now we need to explode the dataframe so that we have one row per example input-output pair, since we want to predict the output for each example input separately
-    df = df.explode("test_inputs")
-    df["predict_output_prompt"] = df.apply(
-        lambda row: row["predict_output_prompt"].replace(
-            "[INPUT]", f"{row['test_inputs']}"
-        ),
-        axis=1,
-    )
-    run_eval_output(
-        model_name=model_name,
-        dataset_name=dataset_name,
-        save_name=save_name,
-        override_gen=override_gen,
-        input_file=input_file,
-        output_file=output_file,
-        intermediate_file=intermediate_file,
-        df=df,
-        prompt_column="predict_output_prompt",
-        prediction_file=prediction_file,
-        output_column="predicted_output_output",
-        max_new_tokens=300,
-    )
-
-
-@click.command()
-@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
-@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
-@click.option(
-    "--save_name", type=str, default=None, help="Name to save the predictions under."
-)
-@click.option(
-    "--override_gen", is_flag=True, help="Whether to override existing generation."
-)
-def predict_input(model_name, dataset_name, save_name, override_gen):
+def do_predict_input(model_name, dataset_name, save_name, override_gen, prediction_column):
     prediction_file = get_save_paths(dataset_name, save_name)
     save_name = f"{save_name}_input_prediction"
     output_file = get_save_paths(dataset_name, save_name)
@@ -770,20 +755,21 @@ def predict_input(model_name, dataset_name, save_name, override_gen):
         df.at[i, "target_outputs"] = target_outputs
 
     def make_predict_input_prompt(row):
+        if "description" in row:
+            true_description = row["description"]
+        else:
+            true_description = row["true_description"]        
         description = row["predicted_description_clean"]
         test_func_str = row["test_func_validated"]
         header_start = test_func_str.index("def test_func(")
         header_end = test_func_str.index("\n", header_start)
         func_header = test_func_str[header_start:header_end]
-        examples = row["train_inputs"]
-        example_outputs = row["target_outputs"]
-        examples = [
-            f"Input: {examples[i]} => Output: {example_outputs[i]}"
-            for i in range(len(examples))
-        ]
-        examples_str = "\n".join(examples)
+        examples_str = get_all_examples_str(row)
+        if prediction_column not in ["prediction", "true"]:
+            log_error(f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'.")
+        use_description = description if prediction_column == "prediction" else true_description
         prompt = (
-            input_prediction_prompt.replace("[DESCRIPTION]", description)
+            input_prediction_prompt.replace("[DESCRIPTION]", use_description)
             .replace("[HEADER]", func_header)
             .replace("[EXAMPLES]", examples_str)
         )
@@ -814,6 +800,32 @@ def predict_input(model_name, dataset_name, save_name, override_gen):
         output_column="predicted_input_output",
         max_new_tokens=300,
     )
+
+@click.command()
+@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
+@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
+@click.option(
+    "--save_name", type=str, default=None, help="Name to save the predictions under."
+)
+@click.option(
+    "--override_gen", is_flag=True, help="Whether to override existing generation."
+)
+def predict_output(model_name, dataset_name, save_name, override_gen):
+    do_predict_output(model_name, dataset_name, save_name, override_gen, prediction_column="prediction")
+
+
+@click.command()
+@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
+@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
+@click.option(
+    "--save_name", type=str, default=None, help="Name to save the predictions under."
+)
+@click.option(
+    "--override_gen", is_flag=True, help="Whether to override existing generation."
+)
+def predict_input(model_name, dataset_name, save_name, override_gen):
+    do_predict_input(model_name, dataset_name, save_name, override_gen, prediction_column="prediction")
+    
 
 
 @click.command()
@@ -826,71 +838,7 @@ def predict_input(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_gold_code(model_name, dataset_name, save_name, override_gen):
-    prediction_file = get_save_paths(dataset_name, save_name)
-    save_name = f"gold_{save_name}_code_prediction"
-    output_file = get_save_paths(dataset_name, save_name)
-    if os.path.exists(output_file) and not override_gen:
-        log_info(
-            f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
-        )
-        return
-    input_file = output_file.replace(".jsonl", "_input.jsonl")
-    intermediate_file = output_file.replace(".jsonl", "_intermediate.jsonl")
-    df = pd.read_json(prediction_file, orient="records", lines=True)
-
-    def make_code_prompt(row):
-        true_description = None
-        if "true_description" in row:
-            true_description = row["true_description"]
-        else:
-            true_description = row["description"]
-        test_func_str = row["test_func_validated"]
-        header_start = test_func_str.index("def test_func(")
-        header_end = test_func_str.index("\n", header_start)
-        func_header = test_func_str[header_start:header_end]
-        if "all_examples" in row:
-            examples = row["all_examples"]
-        else:
-            examples = row["train_inputs"]
-        if isinstance(examples, str):
-            examples = eval(examples)
-        test_func_code = row["test_func_validated"]
-        example_outputs = []
-        try:
-            runner = RunTestFunc(test_func_code)
-            for example in examples:
-                example_outputs.append(runner.run_test_str(example))
-        except:
-            log_warn(
-                f"Could not run test function for row with description: {true_description}. This should never happen."
-            )
-            return None
-        examples = [
-            f"Input: {examples[i]} => Output: {example_outputs[i][0]}, Error: {example_outputs[i][1]}"
-            for i in range(len(examples))
-        ]
-        examples_str = "\n".join(examples)
-        prompt = (
-            code_prediction_prompt.replace("[DESCRIPTION]", true_description)
-            .replace("[HEADER]", func_header)
-            .replace("[EXAMPLES]", examples_str)
-        )
-        return prompt
-
-    df["code_prediction_prompt"] = df.apply(make_code_prompt, axis=1)
-    run_eval_code(
-        model_name=model_name,
-        dataset_name=dataset_name,
-        save_name=save_name,
-        override_gen=override_gen,
-        input_file=input_file,
-        output_file=output_file,
-        intermediate_file=intermediate_file,
-        df=df,
-        prompt_column="code_prediction_prompt",
-        output_column="predicted_code_output",
-        max_new_tokens=600,
-    )
+    do_predict_code(model_name, dataset_name, save_name, override_gen, prediction_column="true")
 
 
 @click.command()
@@ -903,73 +851,7 @@ def predict_gold_code(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_gold_output(model_name, dataset_name, save_name, override_gen):
-    prediction_file = get_save_paths(dataset_name, save_name)
-    save_name = f"gold_{save_name}_output_prediction"
-    output_file = get_save_paths(dataset_name, save_name)
-    if os.path.exists(output_file) and not override_gen:
-        log_info(
-            f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
-        )
-        return
-    input_file = output_file.replace(".jsonl", "_input.jsonl")
-    intermediate_file = output_file.replace(".jsonl", "_intermediate.jsonl")
-    df = pd.read_json(prediction_file, orient="records", lines=True)
-
-    def make_predict_output_prompt(row):
-        true_description = None
-        if "true_description" in row:
-            true_description = row["true_description"]
-        else:
-            true_description = row["description"]
-        predicted_description = row["predicted_description_clean"]
-        if "all_examples" in row:
-            examples = row["all_examples"]
-        else:
-            examples = row["train_inputs"]
-        test_func_code = row["test_func_validated"]
-        example_outputs = []
-        try:
-            runner = RunTestFunc(test_func_code)
-            for example in examples:
-                example_outputs.append(runner.run_test_str(example))
-        except:
-            log_warn(
-                f"Could not run test function for row with description: {true_description}. This should never happen."
-            )
-            return None
-        examples = [
-            f"Input: {examples[i]} => Output: {example_outputs[i][0]}"
-            for i in range(len(examples))
-        ]
-        examples_str = "\n".join(examples)
-        prompt = output_prediction_prompt.replace(
-            "[DESCRIPTION]", true_description
-        ).replace("[EXAMPLES]", examples_str)
-        return prompt
-
-    df["predict_output_prompt"] = df.apply(make_predict_output_prompt, axis=1)
-    # now we need to explode the dataframe so that we have one row per example input-output pair, since we want to predict the output for each example input separately
-    df = df.explode("test_inputs")
-    df["predict_output_prompt"] = df.apply(
-        lambda row: row["predict_output_prompt"].replace(
-            "[INPUT]", f"{row['test_inputs']}"
-        ),
-        axis=1,
-    )
-    run_eval_output(
-        model_name=model_name,
-        dataset_name=dataset_name,
-        save_name=save_name,
-        override_gen=override_gen,
-        input_file=input_file,
-        output_file=output_file,
-        intermediate_file=intermediate_file,
-        df=df,
-        prompt_column="predict_output_prompt",
-        prediction_file=prediction_file,
-        output_column="predicted_output_output",
-        max_new_tokens=300,
-    )
+    do_predict_output(model_name, dataset_name, save_name, override_gen, prediction_column="true")
 
 
 @click.command()
@@ -982,87 +864,7 @@ def predict_gold_output(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_gold_input(model_name, dataset_name, save_name, override_gen):
-    prediction_file = get_save_paths(dataset_name, save_name)
-    save_name = f"gold_{save_name}_input_prediction"
-    output_file = get_save_paths(dataset_name, save_name)
-    if os.path.exists(output_file) and not override_gen:
-        log_info(
-            f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
-        )
-        return
-    input_file = output_file.replace(".jsonl", "_input.jsonl")
-    intermediate_file = output_file.replace(".jsonl", "_intermediate.jsonl")
-    df = pd.read_json(prediction_file, orient="records", lines=True)
-    df["target_outputs"] = None
-    for i, row in df.iterrows():
-        if "description" in row:
-            true_description = row["description"]
-        else:
-            true_description = row["true_description"]
-        func_code = row["test_func_validated"]
-        test_inputs = row["test_inputs"]
-        target_outputs = []
-        try:
-            runner = RunTestFunc(func_code)
-            for test_input in test_inputs:
-                ret, err = runner.run_test_str(test_input)
-                target_outputs.append(repr(ret))
-        except:
-            log_warn(
-                f"Could not run test function for row with description: {true_description}. This should never happen."
-            )
-            continue
-        df.at[i, "target_outputs"] = target_outputs
-
-    def make_predict_input_prompt(row):
-        true_description = None
-        if "true_description" in row:
-            true_description = row["true_description"]
-        else:
-            true_description = row["description"]
-        test_func_str = row["test_func_validated"]
-        header_start = test_func_str.index("def test_func(")
-        header_end = test_func_str.index("\n", header_start)
-        func_header = test_func_str[header_start:header_end]
-        examples = row["train_inputs"]
-        example_outputs = row["target_outputs"]
-        examples = [
-            f"Input: {examples[i]} => Output: {example_outputs[i]}"
-            for i in range(len(examples))
-        ]
-        examples_str = "\n".join(examples)
-        prompt = (
-            input_prediction_prompt.replace("[DESCRIPTION]", true_description)
-            .replace("[HEADER]", func_header)
-            .replace("[EXAMPLES]", examples_str)
-        )
-        return prompt
-
-    df["predict_input_prompt"] = df.apply(make_predict_input_prompt, axis=1)
-    # explode and use target_outputs as the new output to predict the input for
-    target_outputs = df["target_outputs"]
-    df = df.explode("target_outputs")
-    df["predict_input_prompt"] = df.apply(
-        lambda row: row["predict_input_prompt"].replace(
-            "[OUTPUT]", f"{row['target_outputs']}"
-        ),
-        axis=1,
-    )
-    run_eval_input(
-        model_name=model_name,
-        dataset_name=dataset_name,
-        save_name=save_name,
-        override_gen=override_gen,
-        input_file=input_file,
-        output_file=output_file,
-        intermediate_file=intermediate_file,
-        df=df,
-        prompt_column="predict_input_prompt",
-        prediction_file=prediction_file,
-        target_outputs=target_outputs,
-        output_column="predicted_input_output",
-        max_new_tokens=300,
-    )
+    do_predict_input(model_name, dataset_name, save_name, override_gen, prediction_column="true")
 
 
 @click.group()
