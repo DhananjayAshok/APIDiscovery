@@ -877,6 +877,7 @@ cli.add_command(run_zeroshot, name="zeroshot")
 cli.add_command(predict_code, name="code")
 cli.add_command(predict_output, name="output")
 cli.add_command(predict_input, name="input")
+cli.add_command(predict_gold_code, name="gold_code")
 cli.add_command(predict_gold_output, name="gold_output")
 cli.add_command(predict_gold_input, name="gold_input")
 
