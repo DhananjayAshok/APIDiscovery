@@ -497,6 +497,157 @@ Reasoning:
 """
 
 
+def run_eval_output(
+    model_name: str,
+    dataset_name: str,
+    save_name: str,
+    override_gen: bool,
+    input_file: str,
+    output_file: str,
+    intermediate_file: str,
+    df: pd.DataFrame,
+    prompt_column: str,
+    prediction_file: str,
+    output_column: str = "predicted_output_output",
+    max_new_tokens: int = 300,
+):
+    """
+    Common function for running output prediction evaluation.
+    """
+    df["original_index"] = df.index
+    df.to_json(input_file, orient="records", lines=True)
+    df = RawLoaders.call_infer(
+        run_name=save_name,
+        dataset_name=dataset_name,
+        split="test",
+        input_file=input_file,
+        output_file=intermediate_file,
+        input_column=prompt_column,
+        output_column=output_column,
+        max_new_tokens=max_new_tokens,
+        model=model_name,
+        parameters=load_parameters(),
+        ignore_checkpoint=override_gen,
+    )
+    if not os.path.exists(intermediate_file):
+        log_warn(
+            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
+        )
+        return df
+    df = pd.read_json(intermediate_file, orient="records", lines=True)
+
+    def extract_output(row):
+        if "description" in row:
+            true_description = row["description"]
+        else:
+            true_description = row["true_description"]
+        response = row[output_column]
+        if isinstance(response, list):
+            response = response[0]
+        if "[STOP]" in response:
+            output_part = response.split("[STOP]")[0]
+        else:
+            output_part = response
+        if "Expected Output:" in output_part:
+            expected_output = output_part.split("Expected Output:")[1].strip()
+            return expected_output
+        else:
+            log_warn(
+                f"Could not extract expected output for row with description: {true_description}. Response was: {response}"
+            )
+            return None
+
+    parse_errors = 0
+    df["predicted_output"] = None
+    for i, row in df.iterrows():
+        expected_output = extract_output(row)
+        if expected_output is not None:
+            df.at[i, "predicted_output"] = expected_output
+        else:
+            parse_errors += 1
+    df = df.groupby(df["original_index"]).agg({"predicted_output": list}).reset_index()
+    original_df = pd.read_json(prediction_file, orient="records", lines=True)
+    original_df["predicted_output"] = df["predicted_output"]
+    original_df.to_json(output_file, orient="records", lines=True)
+    log_info(
+        f"Saved predicted outputs to {output_file} | Parse errors: {parse_errors}/{len(df)}"
+    )
+    return original_df
+
+
+def run_eval_input(
+    model_name: str,
+    dataset_name: str,
+    save_name: str,
+    override_gen: bool,
+    input_file: str,
+    output_file: str,
+    intermediate_file: str,
+    df: pd.DataFrame,
+    prompt_column: str,
+    prediction_file: str,
+    target_outputs: pd.Series,
+    output_column: str = "predicted_input_output",
+    max_new_tokens: int = 300,
+):
+    """
+    Common function for running input prediction evaluation.
+    """
+    df["original_index"] = df.index
+    df.to_json(input_file, orient="records", lines=True)
+    print(input_file)
+    df = RawLoaders.call_infer(
+        run_name=save_name,
+        dataset_name=dataset_name,
+        split="test",
+        input_file=input_file,
+        output_file=intermediate_file,
+        input_column=prompt_column,
+        output_column=output_column,
+        max_new_tokens=max_new_tokens,
+        model=model_name,
+        parameters=load_parameters(),
+        ignore_checkpoint=override_gen,
+    )
+    if not os.path.exists(intermediate_file):
+        log_warn(
+            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
+        )
+        return df
+    df = pd.read_json(intermediate_file, orient="records", lines=True)
+
+    def extract_input(row):
+        if "description" in row:
+            true_description = row["description"]
+        else:
+            true_description = row["true_description"]
+        response = row[output_column]
+        if isinstance(response, list):
+            response = response[0]
+        if "[STOP]" in response:
+            input_part = response.split("[STOP]")[0]
+        else:
+            input_part = response
+        if "Suggested Input:" in input_part:
+            suggested_input = input_part.split("Suggested Input:")[1].strip()
+            return suggested_input
+        else:
+            log_warn(
+                f"Could not extract suggested input for row with description: {true_description}. Response was: {response}"
+            )
+            return None
+
+    df["predicted_input"] = df.apply(extract_input, axis=1)
+    df = df.groupby(df["original_index"]).agg({"predicted_input": list}).reset_index()
+    original_df = pd.read_json(prediction_file, orient="records", lines=True)
+    original_df["predicted_input"] = df["predicted_input"]
+    original_df["predict_input_prompt"] = df["predict_input_prompt"]
+    original_df["target_outputs"] = target_outputs
+    original_df.to_json(output_file, orient="records", lines=True)
+    log_info(f"Saved predicted inputs to {output_file}")
+    return original_df
+
+
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
 @click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
@@ -560,65 +711,19 @@ def predict_output(model_name, dataset_name, save_name, override_gen):
         ),
         axis=1,
     )
-    df["original_index"] = df.index
-    df.to_json(input_file, orient="records", lines=True)
-    df = RawLoaders.call_infer(
-        run_name=save_name,
+    run_eval_output(
+        model_name=model_name,
         dataset_name=dataset_name,
-        split="test",
+        save_name=save_name,
+        override_gen=override_gen,
         input_file=input_file,
-        output_file=intermediate_file,
-        input_column="predict_output_prompt",
+        output_file=output_file,
+        intermediate_file=intermediate_file,
+        df=df,
+        prompt_column="predict_output_prompt",
+        prediction_file=prediction_file,
         output_column="predicted_output_output",
         max_new_tokens=300,
-        model=model_name,
-        parameters=load_parameters(),
-        ignore_checkpoint=override_gen,
-    )
-    if not os.path.exists(intermediate_file):
-        log_warn(
-            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
-        )
-        return
-    df = pd.read_json(intermediate_file, orient="records", lines=True)
-
-    def extract_output(row):
-        if "description" in row:
-            true_description = row["description"]
-        else:
-            true_description = row["true_description"]
-        response = row["predicted_output_output"]
-        if isinstance(response, list):
-            response = response[0]
-        if "[STOP]" in response:
-            output_part = response.split("[STOP]")[0]
-        else:
-            output_part = response
-        if "Expected Output:" in output_part:
-            expected_output = output_part.split("Expected Output:")[1].strip()
-            return expected_output
-        else:
-            log_warn(
-                f"Could not extract expected output for row with description: {true_description}. Response was: {response}"
-            )
-            return None
-
-    parse_errors = 0
-    df["predicted_output"] = None
-    for i, row in df.iterrows():
-        expected_output = extract_output(row)
-        if expected_output is not None:
-            df.at[i, "predicted_output"] = expected_output
-        else:
-            parse_errors += 1
-    # now we need to groupby the dataframe by the original rows, and aggregate the predicted outputs into a list
-    df = df.groupby(df["original_index"]).agg({"predicted_output": list}).reset_index()
-    # now we need to merge this dataframe with the original dataframe to get the other columns back
-    original_df = pd.read_json(prediction_file, orient="records", lines=True)
-    original_df["predicted_output"] = df["predicted_output"]
-    original_df.to_json(output_file, orient="records", lines=True)
-    log_info(
-        f"Saved predicted outputs to {output_file} | Parse errors: {parse_errors}/{len(df)}"
     )
 
 
@@ -694,61 +799,21 @@ def predict_input(model_name, dataset_name, save_name, override_gen):
         ),
         axis=1,
     )
-    df["original_index"] = df.index
-    df.to_json(input_file, orient="records", lines=True)
-    print(input_file)
-    df = RawLoaders.call_infer(
-        run_name=save_name,
+    run_eval_input(
+        model_name=model_name,
         dataset_name=dataset_name,
-        split="test",
+        save_name=save_name,
+        override_gen=override_gen,
         input_file=input_file,
-        output_file=intermediate_file,
-        input_column="predict_input_prompt",
+        output_file=output_file,
+        intermediate_file=intermediate_file,
+        df=df,
+        prompt_column="predict_input_prompt",
+        prediction_file=prediction_file,
+        target_outputs=target_outputs,
         output_column="predicted_input_output",
         max_new_tokens=300,
-        model=model_name,
-        parameters=load_parameters(),
-        ignore_checkpoint=override_gen,
     )
-    if not os.path.exists(intermediate_file):
-        log_warn(
-            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
-        )
-        return
-    df = pd.read_json(intermediate_file, orient="records", lines=True)
-
-    def extract_input(row):
-        if "description" in row:
-            true_description = row["description"]
-        else:
-            true_description = row["true_description"]
-        response = row["predicted_input_output"]
-        if isinstance(response, list):
-            response = response[0]
-        if "[STOP]" in response:
-            input_part = response.split("[STOP]")[0]
-        else:
-            input_part = response
-        if "Suggested Input:" in input_part:
-            suggested_input = input_part.split("Suggested Input:")[1].strip()
-            return suggested_input
-        else:
-            log_warn(
-                f"Could not extract suggested input for row with description: {true_description}. Response was: {response}"
-            )
-            return None
-
-    df["predicted_input"] = df.apply(extract_input, axis=1)
-    # now we need to groupby the dataframe by the original rows, and aggregate the predicted
-    # inputs into a list
-    df = df.groupby(df["original_index"]).agg({"predicted_input": list}).reset_index()
-    # now we need to merge this dataframe with the original dataframe to get the other columns back
-    original_df = pd.read_json(prediction_file, orient="records", lines=True)
-    original_df["predicted_input"] = df["predicted_input"]
-    original_df["predict_input_prompt"] = df["predict_input_prompt"]
-    original_df["target_outputs"] = target_outputs
-    original_df.to_json(output_file, orient="records", lines=True)
-    log_info(f"Saved predicted inputs to {output_file}")
 
 
 @click.command()
@@ -878,7 +943,7 @@ def predict_gold_output(model_name, dataset_name, save_name, override_gen):
         ]
         examples_str = "\n".join(examples)
         prompt = output_prediction_prompt.replace(
-            "[DESCRIPTION]", predicted_description
+            "[DESCRIPTION]", true_description
         ).replace("[EXAMPLES]", examples_str)
         return prompt
 
@@ -891,57 +956,20 @@ def predict_gold_output(model_name, dataset_name, save_name, override_gen):
         ),
         axis=1,
     )
-    df["original_index"] = df.index
-    df.to_json(input_file, orient="records", lines=True)
-    df = RawLoaders.call_infer(
-        run_name=save_name,
+    run_eval_output(
+        model_name=model_name,
         dataset_name=dataset_name,
-        split="test",
+        save_name=save_name,
+        override_gen=override_gen,
         input_file=input_file,
-        output_file=intermediate_file,
-        input_column="predict_output_prompt",
+        output_file=output_file,
+        intermediate_file=intermediate_file,
+        df=df,
+        prompt_column="predict_output_prompt",
+        prediction_file=prediction_file,
         output_column="predicted_output_output",
         max_new_tokens=300,
-        model=model_name,
-        parameters=load_parameters(),
-        ignore_checkpoint=override_gen,
     )
-    if not os.path.exists(intermediate_file):
-        log_warn(
-            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
-        )
-        return
-    df = pd.read_json(intermediate_file, orient="records", lines=True)
-
-    def extract_output(row):
-        if "description" in row:
-            true_description = row["description"]
-        else:
-            true_description = row["true_description"]
-        response = row["predicted_output_output"]
-        if isinstance(response, list):
-            response = response[0]
-        if "[STOP]" in response:
-            output_part = response.split("[STOP]")[0]
-        else:
-            output_part = response
-        if "Expected Output:" in output_part:
-            expected_output = output_part.split("Expected Output:")[1].strip()
-            return expected_output
-        else:
-            log_warn(
-                f"Could not extract expected output for row with description: {true_description}. Response was: {response}"
-            )
-            return None
-
-    df["predicted_output"] = df.apply(extract_output, axis=1)
-    # now we need to groupby the dataframe by the original rows, and aggregate the predicted outputs into a list
-    df = df.groupby(df["original_index"]).agg({"predicted_output": list}).reset_index()
-    # now we need to merge this dataframe with the original dataframe to get the other columns back
-    original_df = pd.read_json(prediction_file, orient="records", lines=True)
-    original_df["predicted_output"] = df["predicted_output"]
-    original_df.to_json(output_file, orient="records", lines=True)
-    log_info(f"Saved predicted outputs to {output_file}")
 
 
 @click.command()
@@ -1020,61 +1048,21 @@ def predict_gold_input(model_name, dataset_name, save_name, override_gen):
         ),
         axis=1,
     )
-    df["original_index"] = df.index
-    df.to_json(input_file, orient="records", lines=True)
-    print(input_file)
-    df = RawLoaders.call_infer(
-        run_name=save_name,
+    run_eval_input(
+        model_name=model_name,
         dataset_name=dataset_name,
-        split="test",
+        save_name=save_name,
+        override_gen=override_gen,
         input_file=input_file,
-        output_file=intermediate_file,
-        input_column="predict_input_prompt",
+        output_file=output_file,
+        intermediate_file=intermediate_file,
+        df=df,
+        prompt_column="predict_input_prompt",
+        prediction_file=prediction_file,
+        target_outputs=target_outputs,
         output_column="predicted_input_output",
         max_new_tokens=300,
-        model=model_name,
-        parameters=load_parameters(),
-        ignore_checkpoint=override_gen,
     )
-    if not os.path.exists(intermediate_file):
-        log_warn(
-            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
-        )
-        return
-    df = pd.read_json(intermediate_file, orient="records", lines=True)
-
-    def extract_input(row):
-        if "description" in row:
-            true_description = row["description"]
-        else:
-            true_description = row["true_description"]
-        response = row["predicted_input_output"]
-        if isinstance(response, list):
-            response = response[0]
-        if "[STOP]" in response:
-            input_part = response.split("[STOP]")[0]
-        else:
-            input_part = response
-        if "Suggested Input:" in input_part:
-            suggested_input = input_part.split("Suggested Input:")[1].strip()
-            return suggested_input
-        else:
-            log_warn(
-                f"Could not extract suggested input for row with description: {true_description}. Response was: {response}"
-            )
-            return None
-
-    df["predicted_input"] = df.apply(extract_input, axis=1)
-    # now we need to groupby the dataframe by the original rows, and aggregate the predicted
-    # inputs into a list
-    df = df.groupby(df["original_index"]).agg({"predicted_input": list}).reset_index()
-    # now we need to merge this dataframe with the original dataframe to get the other columns back
-    original_df = pd.read_json(prediction_file, orient="records", lines=True)
-    original_df["predicted_input"] = df["predicted_input"]
-    original_df["predict_input_prompt"] = df["predict_input_prompt"]
-    original_df["target_outputs"] = target_outputs
-    original_df.to_json(output_file, orient="records", lines=True)
-    log_info(f"Saved predicted inputs to {output_file}")
 
 
 @click.group()
