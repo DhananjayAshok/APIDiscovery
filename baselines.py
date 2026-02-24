@@ -170,7 +170,7 @@ Hypothesis Conclusion: """
             hypothesis = reflection_response.lower()
             decision = "no"
         if False:
-            print(f"Iteration {i+1}:")
+            print(f"Iteration {i + 1}:")
             print(f"Reasoning: {reasoning}")
             print(f"Suggested inputs: {suggested_inputs}")
             print(f"Function output: {ret}, Error: {err}")
@@ -309,8 +309,75 @@ Reasoning:
 """
 
 
-def run_eval_code():
-    pass  # TODO, make appropriate arguments and move the predict_code eval portion here.
+def run_eval_code(
+    model_name: str,
+    dataset_name: str,
+    save_name: str,
+    override_gen: bool,
+    input_file: str,
+    output_file: str,
+    intermediate_file: str,
+    df: pd.DataFrame,
+    prompt_column: str,
+    output_column: str = "predicted_code_output",
+    max_new_tokens: int = 600,
+):
+    """
+    Common function for running code prediction evaluation.
+    Takes a DataFrame with prompts, runs inference, extracts code, and saves results.
+    """
+    df.to_json(input_file, orient="records", lines=True)
+    df = RawLoaders.call_infer(
+        run_name=save_name,
+        dataset_name=dataset_name,
+        split="test",
+        input_file=input_file,
+        output_file=intermediate_file,
+        input_column=prompt_column,
+        output_column=output_column,
+        max_new_tokens=max_new_tokens,
+        model=model_name,
+        parameters=load_parameters(),
+        ignore_checkpoint=override_gen,
+    )
+    if not os.path.exists(intermediate_file):
+        log_warn(
+            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
+        )
+        return df
+    df = pd.read_json(intermediate_file, orient="records", lines=True)
+    parse_errors = 0
+
+    def extract_code(row):
+        response = row[output_column]
+        if isinstance(response, list):
+            response = response[0]
+        if "description" in row:
+            true_description = row["description"]
+        else:
+            true_description = row["true_description"]
+        if "[STOP]" in response:
+            code_part = response.split("[STOP]")[0]
+        else:
+            code_part = response
+        if "```python" in code_part and "```" in code_part:
+            code = code_part.split("```python")[1].split("```")[0].strip()
+            return code
+        else:
+            return None
+
+    df["predicted_code"] = None
+    for i, row in df.iterrows():
+        code = extract_code(row)
+        if code is not None:
+            df.at[i, "predicted_code"] = code
+        else:
+            parse_errors += 1
+    df.to_json(output_file, orient="records", lines=True)
+    log_info(
+        f"Saved predicted code to {output_file} | Parse errors: {parse_errors}/{len(df)}"
+    )
+    return df
 
 
 @click.command()
@@ -376,58 +443,18 @@ def predict_code(model_name, dataset_name, save_name, override_gen):
         return prompt
 
     df["code_prediction_prompt"] = df.apply(make_code_prompt, axis=1)
-    # TODO: move the below section to the run_eval_code function
-    df.to_json(input_file, orient="records", lines=True)
-    df = RawLoaders.call_infer(
-        run_name=save_name,
+    run_eval_code(
+        model_name=model_name,
         dataset_name=dataset_name,
-        split="test",
+        save_name=save_name,
+        override_gen=override_gen,
         input_file=input_file,
-        output_file=intermediate_file,
-        input_column="code_prediction_prompt",
+        output_file=output_file,
+        intermediate_file=intermediate_file,
+        df=df,
+        prompt_column="code_prediction_prompt",
         output_column="predicted_code_output",
         max_new_tokens=600,
-        model=model_name,
-        parameters=load_parameters(),
-        ignore_checkpoint=override_gen,
-    )
-    if not os.path.exists(intermediate_file):
-        log_warn(
-            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
-        )
-        return
-    df = pd.read_json(intermediate_file, orient="records", lines=True)
-    parse_errors = 0
-
-    def extract_code(row):
-        response = row["predicted_code_output"]
-        if isinstance(response, list):
-            response = response[0]
-        if "description" in row:
-            true_description = row["description"]
-        else:
-            true_description = row["true_description"]
-        if "[STOP]" in response:
-            code_part = response.split("[STOP]")[0]
-        else:
-            code_part = response
-        if "```python" in code_part and "```" in code_part:
-            code = code_part.split("```python")[1].split("```")[0].strip()
-            return code
-        else:
-            # log_warn(f"Could not extract code for row with description: {true_description}. Response was: {response}")
-            return None
-
-    df["predicted_code"] = None
-    for i, row in df.iterrows():
-        code = extract_code(row)
-        if code is not None:
-            df.at[i, "predicted_code"] = code
-        else:
-            parse_errors += 1
-    df.to_json(output_file, orient="records", lines=True)
-    log_info(
-        f"Saved predicted code to {output_file} | Parse errors: {parse_errors}/{len(df)}"
     )
 
 
@@ -786,57 +813,18 @@ def predict_gold_code(model_name, dataset_name, save_name, override_gen):
         return prompt
 
     df["code_prediction_prompt"] = df.apply(make_code_prompt, axis=1)
-    df.to_json(input_file, orient="records", lines=True)
-    df = RawLoaders.call_infer(
-        run_name=save_name,
+    run_eval_code(
+        model_name=model_name,
         dataset_name=dataset_name,
-        split="test",
+        save_name=save_name,
+        override_gen=override_gen,
         input_file=input_file,
-        output_file=intermediate_file,
-        input_column="code_prediction_prompt",
+        output_file=output_file,
+        intermediate_file=intermediate_file,
+        df=df,
+        prompt_column="code_prediction_prompt",
         output_column="predicted_code_output",
         max_new_tokens=600,
-        model=model_name,
-        parameters=load_parameters(),
-        ignore_checkpoint=override_gen,
-    )
-    if not os.path.exists(intermediate_file):
-        log_warn(
-            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
-        )
-        return
-    df = pd.read_json(intermediate_file, orient="records", lines=True)
-    parse_errors = 0
-
-    def extract_code(row):
-        response = row["predicted_code_output"]
-        if isinstance(response, list):
-            response = response[0]
-        if "description" in row:
-            true_description = row["description"]
-        else:
-            true_description = row["true_description"]
-        if "[STOP]" in response:
-            code_part = response.split("[STOP]")[0]
-        else:
-            code_part = response
-        if "```python" in code_part and "```" in code_part:
-            code = code_part.split("```python")[1].split("```")[0].strip()
-            return code
-        else:
-            # log_warn(f"Could not extract code for row with description: {true_description}. Response was: {response}")
-            return None
-
-    df["predicted_code"] = None
-    for i, row in df.iterrows():
-        code = extract_code(row)
-        if code is not None:
-            df.at[i, "predicted_code"] = code
-        else:
-            parse_errors += 1
-    df.to_json(output_file, orient="records", lines=True)
-    log_info(
-        f"Saved predicted code to {output_file} | Parse errors: {parse_errors}/{len(df)}"
     )
 
 
