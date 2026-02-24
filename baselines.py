@@ -15,8 +15,8 @@ def get_dataset(dataset_name, parameters=None):
     dset = load_dataset(
         f"{username}/APIDiscoveryDataset", dataset_name, split="test"
     ).to_pandas()
-    dset['train_inputs'] = dset['train_inputs'].apply(list)
-    dset['test_inputs'] = dset['test_inputs'].apply(list)
+    dset["train_inputs"] = dset["train_inputs"].apply(list)
+    dset["test_inputs"] = dset["test_inputs"].apply(list)
     return dset
 
 
@@ -40,6 +40,7 @@ Your response should be extremely short and concise, just a few sentences. After
 Now provide your reasoning below and then say [STOP]
 Reasoning:"""
 
+
 def get_prev_results_str(prev_results, max_previous_results):
     if not prev_results:
         return "[]"
@@ -53,6 +54,7 @@ def get_prev_results_str(prev_results, max_previous_results):
         results_str += f"  Input: {inp} => Output: {out}, Error: {err}\n"
     results_str += "]"
     return results_str
+
 
 def get_initial_results(func_code, examples):
     try:
@@ -69,13 +71,14 @@ def get_initial_results(func_code, examples):
         prev_results.append((input_str, output, err))
     return prev_results, runner
 
+
 def zero_shot(
     func_code: str, examples, model, max_iterations=100, max_previous_results=10
 ):
     header_start = func_code.index("def test_func(")
     header_end = func_code.index("\n", header_start)
     func_header = func_code[header_start:header_end]
-    
+
     prev_results, runner = get_initial_results(func_code, examples)
     concluded = False
     hypothesis = "Not yet formed"
@@ -130,7 +133,7 @@ Hypothesis Conclusion: """
             .replace("[REASONING]", reasoning)
         )
         response = model.generate(prompt, max_new_tokens=300)
-        steps.append({"input": prompt, "output": response})        
+        steps.append({"input": prompt, "output": response})
         suggested_inputs = None
         options = response.strip().split("\n")
         for opt in options:
@@ -145,7 +148,9 @@ Hypothesis Conclusion: """
         ret, err = runner.run_test_str(suggested_inputs)
         prev_results.append((suggested_inputs, ret, err))
         last_input_str = (
-            "Input: " + suggested_inputs if suggested_inputs is not None else "None" + f" => Output: {ret}, Error: {err}"
+            "Input: " + suggested_inputs
+            if suggested_inputs is not None
+            else "None" + f" => Output: {ret}, Error: {err}"
         )
         reflection = (
             reflection_prompt.replace("[PREV]", prev_results_str)
@@ -154,7 +159,7 @@ Hypothesis Conclusion: """
             .replace("[REASONING]", reasoning)
         )
         reflection_response = model.generate(reflection, max_new_tokens=300)
-        steps.append({"input": reflection_prompt, "output": reflection_response})                
+        steps.append({"input": reflection_prompt, "output": reflection_response})
         if reflection_response.lower().count("summary:") == 1:
             decision, summary = (
                 reflection_response.lower().split("summary:")[0].strip(),
@@ -249,7 +254,7 @@ def run_zeroshot(dataset_name, model_name, save_name, override_gen):
             "concluded",
             "predicted_description",
             "steps",
-            "all_examples"
+            "all_examples",
         ]
         data = []
         for i, row in tqdm(
@@ -260,8 +265,8 @@ def run_zeroshot(dataset_name, model_name, save_name, override_gen):
             test_func_str = row["test_func_validated"]
             true_description = row["description"]
             examples = row["train_inputs"]
-            predicted_description, n_queries, concluded, steps, all_examples = zero_shot(
-                test_func_str, examples, model
+            predicted_description, n_queries, concluded, steps, all_examples = (
+                zero_shot(test_func_str, examples, model)
             )
             data.append(
                 [
@@ -270,8 +275,8 @@ def run_zeroshot(dataset_name, model_name, save_name, override_gen):
                     n_queries,
                     concluded,
                     predicted_description,
-                    steps, 
-                    all_examples
+                    steps,
+                    all_examples,
                 ]
             )
         df = pd.DataFrame(data=data, columns=columns)
@@ -280,6 +285,7 @@ def run_zeroshot(dataset_name, model_name, save_name, override_gen):
         dataset.to_json(save_path, orient="records", lines=True)
         log_info(f"Saved predictions to {save_path}")
     return save_path
+
 
 code_prediction_prompt = """
 You are an expert programmer. Your goal is to create a Python function called `test_func` that matches the following description:
@@ -303,6 +309,10 @@ Reasoning:
 """
 
 
+def run_eval_code():
+    pass  # TODO, make appropriate arguments and move the predict_code eval portion here.
+
+
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
 @click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
@@ -324,6 +334,7 @@ def predict_code(model_name, dataset_name, save_name, override_gen):
     input_file = output_file.replace(".jsonl", "_input.jsonl")
     intermediate_file = output_file.replace(".jsonl", "_intermediate.jsonl")
     df = pd.read_json(prediction_file, orient="records", lines=True)
+
     def make_code_prompt(row):
         true_description = None
         if "true_description" in row:
@@ -348,30 +359,46 @@ def predict_code(model_name, dataset_name, save_name, override_gen):
             for example in examples:
                 example_outputs.append(runner.run_test_str(example))
         except:
-            log_warn(f"Could not run test function for row with description: {true_description}. This should never happen.")
+            log_warn(
+                f"Could not run test function for row with description: {true_description}. This should never happen."
+            )
             return None
-        examples = [f"Input: {examples[i]} => Output: {example_outputs[i][0]}, Error: {example_outputs[i][1]}" for i in range(len(examples))]
+        examples = [
+            f"Input: {examples[i]} => Output: {example_outputs[i][0]}, Error: {example_outputs[i][1]}"
+            for i in range(len(examples))
+        ]
         examples_str = "\n".join(examples)
-        prompt = code_prediction_prompt.replace("[DESCRIPTION]", predicted_description).replace("[HEADER]", func_header).replace("[EXAMPLES]", examples_str)
+        prompt = (
+            code_prediction_prompt.replace("[DESCRIPTION]", predicted_description)
+            .replace("[HEADER]", func_header)
+            .replace("[EXAMPLES]", examples_str)
+        )
         return prompt
+
     df["code_prediction_prompt"] = df.apply(make_code_prompt, axis=1)
+    # TODO: move the below section to the run_eval_code function
     df.to_json(input_file, orient="records", lines=True)
-    df = RawLoaders.call_infer(run_name=save_name,
-                dataset_name=dataset_name,
-                split="test",
-                input_file=input_file,
-                output_file=intermediate_file,
-                input_column="code_prediction_prompt",
-                output_column="predicted_code_output",
-                max_new_tokens=600,
-                model=model_name,
-                parameters=load_parameters(),
-                ignore_checkpoint=override_gen)    
+    df = RawLoaders.call_infer(
+        run_name=save_name,
+        dataset_name=dataset_name,
+        split="test",
+        input_file=input_file,
+        output_file=intermediate_file,
+        input_column="code_prediction_prompt",
+        output_column="predicted_code_output",
+        max_new_tokens=600,
+        model=model_name,
+        parameters=load_parameters(),
+        ignore_checkpoint=override_gen,
+    )
     if not os.path.exists(intermediate_file):
-        log_warn(f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done.")
+        log_warn(
+            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
+        )
         return
     df = pd.read_json(intermediate_file, orient="records", lines=True)
     parse_errors = 0
+
     def extract_code(row):
         response = row["predicted_code_output"]
         if isinstance(response, list):
@@ -388,8 +415,9 @@ def predict_code(model_name, dataset_name, save_name, override_gen):
             code = code_part.split("```python")[1].split("```")[0].strip()
             return code
         else:
-            #log_warn(f"Could not extract code for row with description: {true_description}. Response was: {response}")
+            # log_warn(f"Could not extract code for row with description: {true_description}. Response was: {response}")
             return None
+
     df["predicted_code"] = None
     for i, row in df.iterrows():
         code = extract_code(row)
@@ -398,7 +426,9 @@ def predict_code(model_name, dataset_name, save_name, override_gen):
         else:
             parse_errors += 1
     df.to_json(output_file, orient="records", lines=True)
-    log_info(f"Saved predicted code to {output_file} | Parse errors: {parse_errors}/{len(df)}")
+    log_info(
+        f"Saved predicted code to {output_file} | Parse errors: {parse_errors}/{len(df)}"
+    )
 
 
 output_prediction_prompt = """
@@ -439,11 +469,16 @@ Now, provide your reasoning and suggested input below
 Reasoning:
 """
 
+
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
 @click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
-@click.option("--save_name", type=str, default=None, help="Name to save the predictions under.")
-@click.option("--override_gen", is_flag=True, help="Whether to override existing generation.")
+@click.option(
+    "--save_name", type=str, default=None, help="Name to save the predictions under."
+)
+@click.option(
+    "--override_gen", is_flag=True, help="Whether to override existing generation."
+)
 def predict_output(model_name, dataset_name, save_name, override_gen):
     prediction_file = get_save_paths(dataset_name, save_name)
     save_name = f"{save_name}_output_prediction"
@@ -456,6 +491,7 @@ def predict_output(model_name, dataset_name, save_name, override_gen):
     input_file = output_file.replace(".jsonl", "_input.jsonl")
     intermediate_file = output_file.replace(".jsonl", "_intermediate.jsonl")
     df = pd.read_json(prediction_file, orient="records", lines=True)
+
     def make_predict_output_prompt(row):
         true_description = None
         if "true_description" in row:
@@ -474,33 +510,51 @@ def predict_output(model_name, dataset_name, save_name, override_gen):
             for example in examples:
                 example_outputs.append(runner.run_test_str(example))
         except:
-            log_warn(f"Could not run test function for row with description: {true_description}. This should never happen.")
+            log_warn(
+                f"Could not run test function for row with description: {true_description}. This should never happen."
+            )
             return None
-        examples = [f"Input: {examples[i]} => Output: {example_outputs[i][0]}" for i in range(len(examples))]
+        examples = [
+            f"Input: {examples[i]} => Output: {example_outputs[i][0]}"
+            for i in range(len(examples))
+        ]
         examples_str = "\n".join(examples)
-        prompt = output_prediction_prompt.replace("[DESCRIPTION]", predicted_description).replace("[EXAMPLES]", examples_str)
+        prompt = output_prediction_prompt.replace(
+            "[DESCRIPTION]", predicted_description
+        ).replace("[EXAMPLES]", examples_str)
         return prompt
+
     df["predict_output_prompt"] = df.apply(make_predict_output_prompt, axis=1)
     # now we need to explode the dataframe so that we have one row per example input-output pair, since we want to predict the output for each example input separately
     df = df.explode("test_inputs")
-    df["predict_output_prompt"] = df.apply(lambda row: row["predict_output_prompt"].replace("[INPUT]", f"{row['test_inputs']}"), axis=1)
+    df["predict_output_prompt"] = df.apply(
+        lambda row: row["predict_output_prompt"].replace(
+            "[INPUT]", f"{row['test_inputs']}"
+        ),
+        axis=1,
+    )
     df["original_index"] = df.index
     df.to_json(input_file, orient="records", lines=True)
-    df = RawLoaders.call_infer(run_name=save_name,
-                dataset_name=dataset_name,
-                split="test",
-                input_file=input_file,
-                output_file=intermediate_file,
-                input_column="predict_output_prompt",
-                output_column="predicted_output_output",
-                max_new_tokens=300,
-                model=model_name,
-                parameters=load_parameters(),
-                ignore_checkpoint=override_gen)    
+    df = RawLoaders.call_infer(
+        run_name=save_name,
+        dataset_name=dataset_name,
+        split="test",
+        input_file=input_file,
+        output_file=intermediate_file,
+        input_column="predict_output_prompt",
+        output_column="predicted_output_output",
+        max_new_tokens=300,
+        model=model_name,
+        parameters=load_parameters(),
+        ignore_checkpoint=override_gen,
+    )
     if not os.path.exists(intermediate_file):
-        log_warn(f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done.")
+        log_warn(
+            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
+        )
         return
     df = pd.read_json(intermediate_file, orient="records", lines=True)
+
     def extract_output(row):
         if "description" in row:
             true_description = row["description"]
@@ -517,9 +571,11 @@ def predict_output(model_name, dataset_name, save_name, override_gen):
             expected_output = output_part.split("Expected Output:")[1].strip()
             return expected_output
         else:
-            log_warn(f"Could not extract expected output for row with description: {true_description}. Response was: {response}")
+            log_warn(
+                f"Could not extract expected output for row with description: {true_description}. Response was: {response}"
+            )
             return None
-        
+
     parse_errors = 0
     df["predicted_output"] = None
     for i, row in df.iterrows():
@@ -534,15 +590,20 @@ def predict_output(model_name, dataset_name, save_name, override_gen):
     original_df = pd.read_json(prediction_file, orient="records", lines=True)
     original_df["predicted_output"] = df["predicted_output"]
     original_df.to_json(output_file, orient="records", lines=True)
-    log_info(f"Saved predicted outputs to {output_file} | Parse errors: {parse_errors}/{len(df)}") 
-
+    log_info(
+        f"Saved predicted outputs to {output_file} | Parse errors: {parse_errors}/{len(df)}"
+    )
 
 
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
 @click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
-@click.option("--save_name", type=str, default=None, help="Name to save the predictions under.")
-@click.option("--override_gen", is_flag=True, help="Whether to override existing generation.")
+@click.option(
+    "--save_name", type=str, default=None, help="Name to save the predictions under."
+)
+@click.option(
+    "--override_gen", is_flag=True, help="Whether to override existing generation."
+)
 def predict_input(model_name, dataset_name, save_name, override_gen):
     prediction_file = get_save_paths(dataset_name, save_name)
     save_name = f"{save_name}_input_prediction"
@@ -570,9 +631,12 @@ def predict_input(model_name, dataset_name, save_name, override_gen):
                 ret, err = runner.run_test_str(test_input)
                 target_outputs.append(repr(ret))
         except:
-            log_warn(f"Could not run test function for row with description: {true_description}. This should never happen.")
+            log_warn(
+                f"Could not run test function for row with description: {true_description}. This should never happen."
+            )
             continue
         df.at[i, "target_outputs"] = target_outputs
+
     def make_predict_input_prompt(row):
         description = row["predicted_description_clean"]
         test_func_str = row["test_func_validated"]
@@ -581,33 +645,51 @@ def predict_input(model_name, dataset_name, save_name, override_gen):
         func_header = test_func_str[header_start:header_end]
         examples = row["train_inputs"]
         example_outputs = row["target_outputs"]
-        examples = [f"Input: {examples[i]} => Output: {example_outputs[i]}" for i in range(len(examples))]
+        examples = [
+            f"Input: {examples[i]} => Output: {example_outputs[i]}"
+            for i in range(len(examples))
+        ]
         examples_str = "\n".join(examples)
-        prompt = input_prediction_prompt.replace("[DESCRIPTION]", description).replace("[HEADER]", func_header).replace("[EXAMPLES]", examples_str)
+        prompt = (
+            input_prediction_prompt.replace("[DESCRIPTION]", description)
+            .replace("[HEADER]", func_header)
+            .replace("[EXAMPLES]", examples_str)
+        )
         return prompt
+
     df["predict_input_prompt"] = df.apply(make_predict_input_prompt, axis=1)
     # explode and use target_outputs as the new output to predict the input for
     target_outputs = df["target_outputs"]
     df = df.explode("target_outputs")
-    df["predict_input_prompt"] = df.apply(lambda row: row["predict_input_prompt"].replace("[OUTPUT]", f"{row['target_outputs']}"), axis=1)
+    df["predict_input_prompt"] = df.apply(
+        lambda row: row["predict_input_prompt"].replace(
+            "[OUTPUT]", f"{row['target_outputs']}"
+        ),
+        axis=1,
+    )
     df["original_index"] = df.index
     df.to_json(input_file, orient="records", lines=True)
     print(input_file)
-    df = RawLoaders.call_infer(run_name=save_name,
-                dataset_name=dataset_name,
-                split="test",
-                input_file=input_file,
-                output_file=intermediate_file,
-                input_column="predict_input_prompt",
-                output_column="predicted_input_output",
-                max_new_tokens=300,
-                model=model_name,
-                parameters=load_parameters(),
-                ignore_checkpoint=override_gen)    
+    df = RawLoaders.call_infer(
+        run_name=save_name,
+        dataset_name=dataset_name,
+        split="test",
+        input_file=input_file,
+        output_file=intermediate_file,
+        input_column="predict_input_prompt",
+        output_column="predicted_input_output",
+        max_new_tokens=300,
+        model=model_name,
+        parameters=load_parameters(),
+        ignore_checkpoint=override_gen,
+    )
     if not os.path.exists(intermediate_file):
-        log_warn(f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done.")
+        log_warn(
+            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
+        )
         return
     df = pd.read_json(intermediate_file, orient="records", lines=True)
+
     def extract_input(row):
         if "description" in row:
             true_description = row["description"]
@@ -624,8 +706,11 @@ def predict_input(model_name, dataset_name, save_name, override_gen):
             suggested_input = input_part.split("Suggested Input:")[1].strip()
             return suggested_input
         else:
-            log_warn(f"Could not extract suggested input for row with description: {true_description}. Response was: {response}")
+            log_warn(
+                f"Could not extract suggested input for row with description: {true_description}. Response was: {response}"
+            )
             return None
+
     df["predicted_input"] = df.apply(extract_input, axis=1)
     # now we need to groupby the dataframe by the original rows, and aggregate the predicted
     # inputs into a list
@@ -637,7 +722,6 @@ def predict_input(model_name, dataset_name, save_name, override_gen):
     original_df["target_outputs"] = target_outputs
     original_df.to_json(output_file, orient="records", lines=True)
     log_info(f"Saved predicted inputs to {output_file}")
-
 
 
 @click.command()
@@ -661,6 +745,7 @@ def predict_gold_code(model_name, dataset_name, save_name, override_gen):
     input_file = output_file.replace(".jsonl", "_input.jsonl")
     intermediate_file = output_file.replace(".jsonl", "_intermediate.jsonl")
     df = pd.read_json(prediction_file, orient="records", lines=True)
+
     def make_code_prompt(row):
         true_description = None
         if "true_description" in row:
@@ -684,30 +769,45 @@ def predict_gold_code(model_name, dataset_name, save_name, override_gen):
             for example in examples:
                 example_outputs.append(runner.run_test_str(example))
         except:
-            log_warn(f"Could not run test function for row with description: {true_description}. This should never happen.")
+            log_warn(
+                f"Could not run test function for row with description: {true_description}. This should never happen."
+            )
             return None
-        examples = [f"Input: {examples[i]} => Output: {example_outputs[i][0]}, Error: {example_outputs[i][1]}" for i in range(len(examples))]
+        examples = [
+            f"Input: {examples[i]} => Output: {example_outputs[i][0]}, Error: {example_outputs[i][1]}"
+            for i in range(len(examples))
+        ]
         examples_str = "\n".join(examples)
-        prompt = code_prediction_prompt.replace("[DESCRIPTION]", true_description).replace("[HEADER]", func_header).replace("[EXAMPLES]", examples_str)
+        prompt = (
+            code_prediction_prompt.replace("[DESCRIPTION]", true_description)
+            .replace("[HEADER]", func_header)
+            .replace("[EXAMPLES]", examples_str)
+        )
         return prompt
+
     df["code_prediction_prompt"] = df.apply(make_code_prompt, axis=1)
     df.to_json(input_file, orient="records", lines=True)
-    df = RawLoaders.call_infer(run_name=save_name,
-                dataset_name=dataset_name,
-                split="test",
-                input_file=input_file,
-                output_file=intermediate_file,
-                input_column="code_prediction_prompt",
-                output_column="predicted_code_output",
-                max_new_tokens=600,
-                model=model_name,
-                parameters=load_parameters(),
-                ignore_checkpoint=override_gen)    
+    df = RawLoaders.call_infer(
+        run_name=save_name,
+        dataset_name=dataset_name,
+        split="test",
+        input_file=input_file,
+        output_file=intermediate_file,
+        input_column="code_prediction_prompt",
+        output_column="predicted_code_output",
+        max_new_tokens=600,
+        model=model_name,
+        parameters=load_parameters(),
+        ignore_checkpoint=override_gen,
+    )
     if not os.path.exists(intermediate_file):
-        log_warn(f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done.")
+        log_warn(
+            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
+        )
         return
     df = pd.read_json(intermediate_file, orient="records", lines=True)
     parse_errors = 0
+
     def extract_code(row):
         response = row["predicted_code_output"]
         if isinstance(response, list):
@@ -724,8 +824,9 @@ def predict_gold_code(model_name, dataset_name, save_name, override_gen):
             code = code_part.split("```python")[1].split("```")[0].strip()
             return code
         else:
-            #log_warn(f"Could not extract code for row with description: {true_description}. Response was: {response}")
+            # log_warn(f"Could not extract code for row with description: {true_description}. Response was: {response}")
             return None
+
     df["predicted_code"] = None
     for i, row in df.iterrows():
         code = extract_code(row)
@@ -734,14 +835,20 @@ def predict_gold_code(model_name, dataset_name, save_name, override_gen):
         else:
             parse_errors += 1
     df.to_json(output_file, orient="records", lines=True)
-    log_info(f"Saved predicted code to {output_file} | Parse errors: {parse_errors}/{len(df)}")
+    log_info(
+        f"Saved predicted code to {output_file} | Parse errors: {parse_errors}/{len(df)}"
+    )
 
 
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
 @click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
-@click.option("--save_name", type=str, default=None, help="Name to save the predictions under.")
-@click.option("--override_gen", is_flag=True, help="Whether to override existing generation.")
+@click.option(
+    "--save_name", type=str, default=None, help="Name to save the predictions under."
+)
+@click.option(
+    "--override_gen", is_flag=True, help="Whether to override existing generation."
+)
 def predict_gold_output(model_name, dataset_name, save_name, override_gen):
     prediction_file = get_save_paths(dataset_name, save_name)
     save_name = f"gold_{save_name}_output_prediction"
@@ -754,6 +861,7 @@ def predict_gold_output(model_name, dataset_name, save_name, override_gen):
     input_file = output_file.replace(".jsonl", "_input.jsonl")
     intermediate_file = output_file.replace(".jsonl", "_intermediate.jsonl")
     df = pd.read_json(prediction_file, orient="records", lines=True)
+
     def make_predict_output_prompt(row):
         true_description = None
         if "true_description" in row:
@@ -772,33 +880,51 @@ def predict_gold_output(model_name, dataset_name, save_name, override_gen):
             for example in examples:
                 example_outputs.append(runner.run_test_str(example))
         except:
-            log_warn(f"Could not run test function for row with description: {true_description}. This should never happen.")
+            log_warn(
+                f"Could not run test function for row with description: {true_description}. This should never happen."
+            )
             return None
-        examples = [f"Input: {examples[i]} => Output: {example_outputs[i][0]}" for i in range(len(examples))]
+        examples = [
+            f"Input: {examples[i]} => Output: {example_outputs[i][0]}"
+            for i in range(len(examples))
+        ]
         examples_str = "\n".join(examples)
-        prompt = output_prediction_prompt.replace("[DESCRIPTION]", predicted_description).replace("[EXAMPLES]", examples_str)
+        prompt = output_prediction_prompt.replace(
+            "[DESCRIPTION]", predicted_description
+        ).replace("[EXAMPLES]", examples_str)
         return prompt
+
     df["predict_output_prompt"] = df.apply(make_predict_output_prompt, axis=1)
     # now we need to explode the dataframe so that we have one row per example input-output pair, since we want to predict the output for each example input separately
     df = df.explode("test_inputs")
-    df["predict_output_prompt"] = df.apply(lambda row: row["predict_output_prompt"].replace("[INPUT]", f"{row['test_inputs']}"), axis=1)
+    df["predict_output_prompt"] = df.apply(
+        lambda row: row["predict_output_prompt"].replace(
+            "[INPUT]", f"{row['test_inputs']}"
+        ),
+        axis=1,
+    )
     df["original_index"] = df.index
     df.to_json(input_file, orient="records", lines=True)
-    df = RawLoaders.call_infer(run_name=save_name,
-                dataset_name=dataset_name,
-                split="test",
-                input_file=input_file,
-                output_file=intermediate_file,
-                input_column="predict_output_prompt",
-                output_column="predicted_output_output",
-                max_new_tokens=300,
-                model=model_name,
-                parameters=load_parameters(),
-                ignore_checkpoint=override_gen)    
+    df = RawLoaders.call_infer(
+        run_name=save_name,
+        dataset_name=dataset_name,
+        split="test",
+        input_file=input_file,
+        output_file=intermediate_file,
+        input_column="predict_output_prompt",
+        output_column="predicted_output_output",
+        max_new_tokens=300,
+        model=model_name,
+        parameters=load_parameters(),
+        ignore_checkpoint=override_gen,
+    )
     if not os.path.exists(intermediate_file):
-        log_warn(f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done.")
+        log_warn(
+            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
+        )
         return
     df = pd.read_json(intermediate_file, orient="records", lines=True)
+
     def extract_output(row):
         if "description" in row:
             true_description = row["description"]
@@ -815,10 +941,11 @@ def predict_gold_output(model_name, dataset_name, save_name, override_gen):
             expected_output = output_part.split("Expected Output:")[1].strip()
             return expected_output
         else:
-            log_warn(f"Could not extract expected output for row with description: {true_description}. Response was: {response}")
+            log_warn(
+                f"Could not extract expected output for row with description: {true_description}. Response was: {response}"
+            )
             return None
-        
-        
+
     df["predicted_output"] = df.apply(extract_output, axis=1)
     # now we need to groupby the dataframe by the original rows, and aggregate the predicted outputs into a list
     df = df.groupby(df["original_index"]).agg({"predicted_output": list}).reset_index()
@@ -826,15 +953,18 @@ def predict_gold_output(model_name, dataset_name, save_name, override_gen):
     original_df = pd.read_json(prediction_file, orient="records", lines=True)
     original_df["predicted_output"] = df["predicted_output"]
     original_df.to_json(output_file, orient="records", lines=True)
-    log_info(f"Saved predicted outputs to {output_file}") 
-
+    log_info(f"Saved predicted outputs to {output_file}")
 
 
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
 @click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
-@click.option("--save_name", type=str, default=None, help="Name to save the predictions under.")
-@click.option("--override_gen", is_flag=True, help="Whether to override existing generation.")
+@click.option(
+    "--save_name", type=str, default=None, help="Name to save the predictions under."
+)
+@click.option(
+    "--override_gen", is_flag=True, help="Whether to override existing generation."
+)
 def predict_gold_input(model_name, dataset_name, save_name, override_gen):
     prediction_file = get_save_paths(dataset_name, save_name)
     save_name = f"gold_{save_name}_input_prediction"
@@ -862,9 +992,12 @@ def predict_gold_input(model_name, dataset_name, save_name, override_gen):
                 ret, err = runner.run_test_str(test_input)
                 target_outputs.append(repr(ret))
         except:
-            log_warn(f"Could not run test function for row with description: {true_description}. This should never happen.")
+            log_warn(
+                f"Could not run test function for row with description: {true_description}. This should never happen."
+            )
             continue
         df.at[i, "target_outputs"] = target_outputs
+
     def make_predict_input_prompt(row):
         true_description = None
         if "true_description" in row:
@@ -877,33 +1010,51 @@ def predict_gold_input(model_name, dataset_name, save_name, override_gen):
         func_header = test_func_str[header_start:header_end]
         examples = row["train_inputs"]
         example_outputs = row["target_outputs"]
-        examples = [f"Input: {examples[i]} => Output: {example_outputs[i]}" for i in range(len(examples))]
+        examples = [
+            f"Input: {examples[i]} => Output: {example_outputs[i]}"
+            for i in range(len(examples))
+        ]
         examples_str = "\n".join(examples)
-        prompt = input_prediction_prompt.replace("[DESCRIPTION]", true_description).replace("[HEADER]", func_header).replace("[EXAMPLES]", examples_str)
+        prompt = (
+            input_prediction_prompt.replace("[DESCRIPTION]", true_description)
+            .replace("[HEADER]", func_header)
+            .replace("[EXAMPLES]", examples_str)
+        )
         return prompt
+
     df["predict_input_prompt"] = df.apply(make_predict_input_prompt, axis=1)
     # explode and use target_outputs as the new output to predict the input for
     target_outputs = df["target_outputs"]
     df = df.explode("target_outputs")
-    df["predict_input_prompt"] = df.apply(lambda row: row["predict_input_prompt"].replace("[OUTPUT]", f"{row['target_outputs']}"), axis=1)
+    df["predict_input_prompt"] = df.apply(
+        lambda row: row["predict_input_prompt"].replace(
+            "[OUTPUT]", f"{row['target_outputs']}"
+        ),
+        axis=1,
+    )
     df["original_index"] = df.index
     df.to_json(input_file, orient="records", lines=True)
     print(input_file)
-    df = RawLoaders.call_infer(run_name=save_name,
-                dataset_name=dataset_name,
-                split="test",
-                input_file=input_file,
-                output_file=intermediate_file,
-                input_column="predict_input_prompt",
-                output_column="predicted_input_output",
-                max_new_tokens=300,
-                model=model_name,
-                parameters=load_parameters(),
-                ignore_checkpoint=override_gen)    
+    df = RawLoaders.call_infer(
+        run_name=save_name,
+        dataset_name=dataset_name,
+        split="test",
+        input_file=input_file,
+        output_file=intermediate_file,
+        input_column="predict_input_prompt",
+        output_column="predicted_input_output",
+        max_new_tokens=300,
+        model=model_name,
+        parameters=load_parameters(),
+        ignore_checkpoint=override_gen,
+    )
     if not os.path.exists(intermediate_file):
-        log_warn(f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done.")
+        log_warn(
+            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
+        )
         return
     df = pd.read_json(intermediate_file, orient="records", lines=True)
+
     def extract_input(row):
         if "description" in row:
             true_description = row["description"]
@@ -920,8 +1071,11 @@ def predict_gold_input(model_name, dataset_name, save_name, override_gen):
             suggested_input = input_part.split("Suggested Input:")[1].strip()
             return suggested_input
         else:
-            log_warn(f"Could not extract suggested input for row with description: {true_description}. Response was: {response}")
+            log_warn(
+                f"Could not extract suggested input for row with description: {true_description}. Response was: {response}"
+            )
             return None
+
     df["predicted_input"] = df.apply(extract_input, axis=1)
     # now we need to groupby the dataframe by the original rows, and aggregate the predicted
     # inputs into a list
@@ -932,7 +1086,7 @@ def predict_gold_input(model_name, dataset_name, save_name, override_gen):
     original_df["predict_input_prompt"] = df["predict_input_prompt"]
     original_df["target_outputs"] = target_outputs
     original_df.to_json(output_file, orient="records", lines=True)
-    log_info(f"Saved predicted inputs to {output_file}")    
+    log_info(f"Saved predicted inputs to {output_file}")
 
 
 @click.group()
