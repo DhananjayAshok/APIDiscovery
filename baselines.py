@@ -555,6 +555,7 @@ def run_eval_output(
         )
         return df
     df = pd.read_json(intermediate_file, orient="records", lines=True)
+    parse_errors = 0
 
     def extract_output(row):
         if "description" in row:
@@ -572,9 +573,6 @@ def run_eval_output(
             expected_output = output_part.split("Expected Output:")[1].strip()
             return expected_output
         else:
-            log_warn(
-                f"Could not extract expected output for row with description: {true_description}. Response was: {response}"
-            )
             return None
 
     parse_errors = 0
@@ -706,19 +704,21 @@ def run_eval_input(
             suggested_input = input_part.split("Suggested Input:")[1].strip()
             return suggested_input
         else:
-            log_warn(
-                f"Could not extract suggested input for row with description: {true_description}. Response was: {response}"
-            )
             return None
-
-    df["predicted_input"] = df.apply(extract_input, axis=1)
+    parse_errors = 0
+    df["predicted_input"] = None
+    for i, row in df.iterrows():
+        predicted_input = extract_input(row)
+        if predicted_input is not None:
+            df.at[i, "predicted_input"] = predicted_input
+        else:
+            parse_errors += 1
     df = df.groupby(df["original_index"]).agg({"predicted_input": list}).reset_index()
     original_df = pd.read_json(prediction_file, orient="records", lines=True)
     original_df["predicted_input"] = df["predicted_input"]
-    original_df["predict_input_prompt"] = df["predict_input_prompt"]
     original_df["target_outputs"] = target_outputs
     original_df.to_json(output_file, orient="records", lines=True)
-    log_info(f"Saved predicted inputs to {output_file}")
+    log_info(f"Saved predicted inputs to {output_file} | Parse errors: {parse_errors}/{len(df)}")
     return original_df
 
 def do_predict_input(model_name, dataset_name, save_name, override_gen, prediction_column):
