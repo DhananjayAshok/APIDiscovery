@@ -36,7 +36,7 @@ set -x
 cuda_string=""
 vllm_cuda_string=""
 get_all_gpus() {
-    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 0 $((NUM_GPUS - 1)))"
+    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 0 $((NUM_GPUS)))"
 }
 
 # 2. Returns 2 to NUM_GPUS-1
@@ -45,7 +45,7 @@ get_gpus_from_2() {
         echo "Error: Not enough GPUs to start from index 2" >&2
         return 1
     fi
-    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 2 $((NUM_GPUS - 1)))"
+    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 2 $((NUM_GPUS+1)))"
 }
 
 # 3. Returns 1 to NUM_GPUS-1
@@ -54,13 +54,10 @@ get_gpus_from_1() {
         echo "Error: Not enough GPUs to start from index 1" >&2
         return 1
     fi
-    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 1 $((NUM_GPUS - 1)))"
+    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 1 $((NUM_GPUS)))"
 }
 
-if (( $NUM_GPUS < 2 )); then
-    echo "Error: Not enough GPUs (found $NUM_GPUS, need at least 2)" >&2
-    exit 1
-elif (( $NUM_GPUS == 2 )); then
+if (( $NUM_GPUS == 1 )); then
     vllm_cuda_string="CUDA_VISIBLE_DEVICES=0"
     get_gpus_from_1
 else
@@ -68,12 +65,12 @@ else
     get_gpus_from_2
 fi
 
-$vllm_cuda_string vllm serve $trainer_policy_model --dtype bfloat16 --served-model-name "model" &
+env $vllm_cuda_string vllm serve $trainer_policy_model --dtype bfloat16 --served-model-name "model" &
 
 sleep 30  # Wait for the vllm server to start
 
 
-HYDRA_FULL_ERROR=1 $cuda_string python -m examples.function_discovery.rl_main \
+env HYDRA_FULL_ERROR=1 $cuda_string python -m examples.function_discovery.rl_main \
   data.train_data="['$DATA_DIR/train.parquet']" \
   data.val_data="['$DATA_DIR/val.parquet']" \
   trainer.algorithm.advantage_estimator="grpo" \
@@ -121,4 +118,5 @@ HYDRA_FULL_ERROR=1 $cuda_string python -m examples.function_discovery.rl_main \
   trainer.run_name="$run_name" \
   $@
 
+ 
 python examples/function_discovery/adapter_to_model.py $trainer_policy_model $trainer_export_path
