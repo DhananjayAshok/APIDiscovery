@@ -143,7 +143,7 @@ class RunTestFunc:
 @dataclass
 class LLMJudgeEnvConfig:
     model: str = "gpt-4o-mini"
-    base_url = None # use "http://localhost:8000/v1" for vLLM servers, None for OpenAI API
+    base_url = "http://localhost:8000/v1/" # use "http://localhost:8000/v1" for vLLM servers, None for OpenAI API
 
 
 class FunctionDiscoveryEnv(BaseTextEnv):
@@ -291,21 +291,21 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             self.turn_kind = "input"
             self.current_hypothesis = "First Turn. No hypothesis yet."
             self.previous_reasoning = None
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            if openai_api_key is None:
-                raise ValueError("`OPENAI_API_KEY` must be set for Llm as a judge env")
             if LLMJudgeEnvConfig.base_url is not None:
                 openai_api_key = "DUMMY"
-            if LLMJudgeEnvConfig.base_url is not None:
                 self.llm_judge_client = OpenAI(
                     api_key=openai_api_key,
                     base_url=LLMJudgeEnvConfig.base_url,
-                )
+                )                
+                self.model = "model"
             else:
+                openai_api_key = os.getenv("OPENAI_API_KEY")
+                if openai_api_key is None:
+                    raise ValueError("`OPENAI_API_KEY` must be set for Llm as a judge env")
                 self.llm_judge_client = OpenAI(
                     api_key=openai_api_key
                 )
-            self.model = LLMJudgeEnvConfig.model
+                self.model = LLMJudgeEnvConfig.model
         except:
             self.runner = None
 

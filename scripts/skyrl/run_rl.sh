@@ -32,7 +32,48 @@ source $skyrl_env_dir/bin/activate || { echo "Failed to activate virtual environ
 uv pip install torch-c-dlpack-ext
 cd SkyRL/skyrl-train || { echo "SkyRL/skyrl-train directory not found. Make sure the path is correct."; exit 1; }
 set -x
-HYDRA_FULL_ERROR=1 python -m examples.function_discovery.rl_main \
+
+cuda_string=""
+vllm_cuda_string=""
+get_all_gpus() {
+    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 0 $((NUM_GPUS - 1)))"
+}
+
+# 2. Returns 2 to NUM_GPUS-1
+get_gpus_from_2() {
+    if [ "$NUM_GPUS" -le 2 ]; then
+        echo "Error: Not enough GPUs to start from index 2" >&2
+        return 1
+    fi
+    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 2 $((NUM_GPUS - 1)))"
+}
+
+# 3. Returns 1 to NUM_GPUS-1
+get_gpus_from_1() {
+    if [ "$NUM_GPUS" -le 1 ]; then
+        echo "Error: Not enough GPUs to start from index 1" >&2
+        return 1
+    fi
+    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 1 $((NUM_GPUS - 1)))"
+}
+
+if (( $NUM_GPUS < 2 )); then
+    echo "Error: Not enough GPUs (found $NUM_GPUS, need at least 2)" >&2
+    exit 1
+elif (( $NUM_GPUS == 2 )); then
+    vllm_cuda_string="CUDA_VISIBLE_DEVICES=0"
+    get_gpus_from_1
+else
+    vllm_cuda_string="CUDA_VISIBLE_DEVICES=0,1"
+    get_gpus_from_2
+fi
+
+$vllm_cuda_string vllm serve $trainer_policy_model --dtype bfloat16 --served-model-name "model" &
+
+sleep 30  # Wait for the vllm server to start
+
+
+HYDRA_FULL_ERROR=1 $cuda_string python -m examples.function_discovery.rl_main \
   data.train_data="['$DATA_DIR/train.parquet']" \
   data.val_data="['$DATA_DIR/val.parquet']" \
   trainer.algorithm.advantage_estimator="grpo" \
