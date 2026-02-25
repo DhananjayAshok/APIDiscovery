@@ -100,6 +100,7 @@ env HYDRA_FULL_ERROR=1 $cuda_string python -m examples.function_discovery.rl_mai
   trainer.ckpt_interval=10 \
   trainer.max_prompt_length=512 \
   generator.sampling_params.max_generate_length=1024 \
+  +generator.engine_init_kwargs.max_model_len=4096 \
   trainer.policy.optimizer_config.lr=1.0e-6 \
   trainer.algorithm.use_kl_loss=true \
   generator.backend=vllm \
