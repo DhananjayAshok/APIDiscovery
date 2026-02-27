@@ -38,12 +38,13 @@ for dataset_name in "${datasets[@]}"; do
         python baselines.py input --dataset_name "$dataset_name" --model_name $model_name --save_name "$save_name" # --override_gen
         python eval.py input --dataset_name $dataset_name --save_name $save_name # --override_eval                
 
+        save_name="gold_$model_save_name"
         python baselines.py gold_code --dataset_name "$dataset_name" --model_name $model_name --save_name "$save_name" # --override_gen
         python eval.py code --dataset_name $dataset_name --save_name gold_$save_name # --override_eval
         python baselines.py gold_output --dataset_name "$dataset_name" --model_name $model_name --save_name "$save_name" # --override_gen
         python eval.py output --dataset_name $dataset_name --save_name gold_$save_name # --override_eval        
         python baselines.py gold_input --dataset_name "$dataset_name" --model_name $model_name --save_name "$save_name" # --override_gen
-        python eval.py input --dataset_name $dataset_name --save_name gold_$save_name # --override_eval                        
+        python eval.py input --dataset_name $dataset_name --save_name gold_$save_name # --override_eval                                     
 
     done
 done

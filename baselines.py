@@ -410,8 +410,10 @@ def get_all_examples_str(row):
     return examples_str
 
 
-def do_predict_code(model_name, dataset_name, save_name, override_gen, prediction_column):
-    prediction_file = get_save_paths(dataset_name, save_name)
+def do_predict_code(model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None):
+    if load_name is None:
+        load_name = save_name
+    prediction_file = get_save_paths(dataset_name, load_name)
     save_name = f"{save_name}_code_prediction"
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
@@ -593,8 +595,10 @@ def run_eval_output(
     return original_df
 
 
-def do_predict_output(model_name, dataset_name, save_name, override_gen, prediction_column):
-    prediction_file = get_save_paths(dataset_name, save_name)
+def do_predict_output(model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None):
+    if load_name is None:
+        load_name = save_name
+    prediction_file = get_save_paths(dataset_name, load_name)
     save_name = f"{save_name}_output_prediction"
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
@@ -721,8 +725,10 @@ def run_eval_input(
     log_info(f"Saved predicted inputs to {output_file} | Parse errors: {parse_errors}/{len(df)}")
     return original_df
 
-def do_predict_input(model_name, dataset_name, save_name, override_gen, prediction_column):
-    prediction_file = get_save_paths(dataset_name, save_name)
+def do_predict_input(model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None):
+    if load_name is None:
+        load_name = save_name
+    prediction_file = get_save_paths(dataset_name, load_name)
     save_name = f"{save_name}_input_prediction"
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
@@ -838,7 +844,7 @@ def predict_input(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_gold_code(model_name, dataset_name, save_name, override_gen):
-    do_predict_code(model_name, dataset_name, save_name, override_gen, prediction_column="true")
+    do_predict_code(model_name, dataset_name, "gold_" + save_name.split("_", 1), override_gen, prediction_column="true", load_name=save_name)
 
 
 @click.command()
@@ -851,7 +857,7 @@ def predict_gold_code(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_gold_output(model_name, dataset_name, save_name, override_gen):
-    do_predict_output(model_name, dataset_name, save_name, override_gen, prediction_column="true")
+    do_predict_output(model_name, dataset_name, "gold_" + save_name.split("_", 1), override_gen, prediction_column="true", load_name=save_name)
 
 
 @click.command()
@@ -864,7 +870,7 @@ def predict_gold_output(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_gold_input(model_name, dataset_name, save_name, override_gen):
-    do_predict_input(model_name, dataset_name, save_name, override_gen, prediction_column="true")
+    do_predict_input(model_name, dataset_name, "gold_" + save_name.split("_", 1), override_gen, prediction_column="true", load_name=save_name)
 
 
 @click.group()
