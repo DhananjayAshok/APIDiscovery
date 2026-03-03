@@ -14,15 +14,23 @@
 """
 
 from utils.parameter_handling import load_parameters, compute_secondary_parameters
-from utils import log_error, log_info, log_warn
-from utils.lm_inference import HuggingFaceModel
+from utils import (
+    log_error,
+    log_info,
+    log_warn,
+    HuggingFaceModel,
+    call_infer,
+    RunTestFunc,
+    get_test_func_header,
+    get_in_context_prompt,
+    get_zero_shot_starting_prompt,
+)
 import click
 import random
 from datasets import load_dataset, Dataset, concatenate_datasets
 from tqdm import tqdm
 import pandas as pd
 import os
-import subprocess
 
 loaded_parameters = load_parameters()
 
@@ -490,44 +498,6 @@ def decode_shift(s: str):
         return {"train": df}
 
     @staticmethod
-    def call_infer(
-        run_name,
-        dataset_name,
-        split,
-        input_file,
-        output_file,
-        input_column,
-        output_column,
-        max_new_tokens,
-        parameters,
-        model=None,
-        ignore_checkpoint=False,
-    ):
-        if model is None:
-            model = parameters["benchmark_creation_model"]
-        open_ai_batch_name = ""
-        if "gpt" in model:
-            open_ai_batch_name = f"{model}-{run_name}-{dataset_name}-{split}"
-        openaibatch_str = "-n " + open_ai_batch_name if open_ai_batch_name != "" else ""
-        command_string = f"bash scripts/infer.sh -i {input_file} -o {output_file} -m {model} -c {input_column} -d {output_column} -t {max_new_tokens} -g {run_name} {openaibatch_str}"
-        if ignore_checkpoint:
-            command_string += " -r yes"
-        log_info(f"Generating validation code with command: {command_string}")
-        subprocess.run(command_string, shell=True, check=True)
-        try:
-            df = pd.read_json(output_file, lines=True)
-            if "output_logits" in df.columns:
-                df.drop("output_logits", axis=1, inplace=True)
-            df.to_json(output_file, orient="records", lines=True)
-        except:
-            log_warn(
-                f"Output file {output_file} not found after inference command. This can happen for OpenAI API models. Run the command again after the batch is complete.",
-                parameters=parameters,
-            )
-            return None
-        return df
-
-    @staticmethod
     def generate_validation_code(dataset_name, split, parameters):
         input_file = parameters["data_dir"] + f"/raw/{dataset_name}/{split}_proc.jsonl"
         output_file = (
@@ -537,7 +507,8 @@ def decode_shift(s: str):
         input_column = "validation_prompt"
         output_column = "validation_output"
         max_new_tokens = 300
-        return RawLoaders.call_infer(
+        model = parameters["benchmark_creation_model"]
+        return call_infer(
             run_name="validation-code",
             dataset_name=dataset_name,
             split=split,
@@ -547,6 +518,8 @@ def decode_shift(s: str):
             output_column=output_column,
             max_new_tokens=max_new_tokens,
             parameters=parameters,
+            model=model,
+            ignore_checkpoint=False,
         )
 
     @staticmethod
@@ -562,7 +535,8 @@ def decode_shift(s: str):
         input_column = "description_prompt"
         output_column = "description_output"
         max_new_tokens = 600
-        return RawLoaders.call_infer(
+        model = parameters["benchmark_creation_model"]
+        return call_infer(
             run_name="description",
             dataset_name=dataset_name,
             split=split,
@@ -572,13 +546,14 @@ def decode_shift(s: str):
             output_column=output_column,
             max_new_tokens=max_new_tokens,
             parameters=parameters,
+            model=model,
+            ignore_checkpoint=False,
         )
 
 
 class MidLoader:
     @staticmethod
     def parse_validation(df):
-        from eval import RunTestFunc
 
         df["test_func_validated"] = None
         df["validation_output"] = df["validation_output"].apply(
@@ -815,7 +790,7 @@ class MidLoader:
         input_column = "example_prompt"
         output_column = "example_output"
         max_new_tokens = 1200
-        return RawLoaders.call_infer(
+        return call_infer(
             run_name="examples",
             dataset_name=dataset_name,
             split=split,
@@ -825,6 +800,8 @@ class MidLoader:
             output_column=output_column,
             max_new_tokens=max_new_tokens,
             parameters=parameters,
+            model=parameters["benchmark_creation_model"],
+            ignore_checkpoint=False,
         )
 
 
@@ -902,8 +879,6 @@ class FilteredLoader:
 
     @staticmethod
     def filter_examples(test_func_code: str, examples: list):
-        from eval import RunTestFunc
-
         try:
             runner = RunTestFunc(test_func_code)
         except Exception as e:
@@ -966,29 +941,37 @@ class FilteredLoader:
         )
         return df
 
+    @staticmethod
+    def make_prompts(row):
+        func_header = get_test_func_header(row["test_func_validated"])
+        runner = RunTestFunc(row["test_func_validated"])
+        previous_examples = []
+        for train_input in row["train_inputs"]:
+            previous_examples.append((train_input, runner.run_test_str(train_input)))
+        direct_prompt = get_in_context_prompt(func_header, previous_examples)
+        zero_shot_prompt = get_zero_shot_starting_prompt(func_header, previous_examples)
+        return direct_prompt, zero_shot_prompt
+
+    @staticmethod
     def make_train_dataset(df):
-        def get_header(func_code):
-            header_start = func_code.index("def test_func(")
-            header_end = func_code.index("\n", header_start)
-            func_header = func_code[header_start:header_end]
-            return func_header
-
-        def make_prompt(row):
-            func_header = get_header(row["test_func_validated"])
-            from eval import RunTestFunc
-
-            runner = RunTestFunc(row["test_func_validated"])
-            prompt = "You are given the following function signature:\n"
-            prompt += func_header + "\n"
-            prompt += "Based on the following examples of inputs and outputs, provide a description of what this function does.\n"
-            for train_input in row["train_inputs"]:
-                prompt += f"Input: {train_input}\n"
-                prompt += f"Output: {runner.run_test_str(train_input)[0]}\n"
-            prompt += "Description: "
-            return prompt
-
-        df["direct_prompt"] = df.apply(make_prompt, axis=1)
+        for index in tqdm(range(len(df)), desc="Making direct prompts"):
+            df.loc[index, "direct_prompt"], df.loc[index, "zero_shot_prompt"] = (
+                FilteredLoader.make_prompts(df.loc[index])
+            )
         return df
+
+    @staticmethod
+    def make_train_dataset_from_hf(dataset):
+        def row_map(x):
+            direct, zero = FilteredLoader.make_prompts(x)
+            return {"direct_prompt": direct, "zero_shot_prompt": zero}
+
+        dataset = dataset.map(row_map)
+        return dataset
+
+
+class FinalLoader:
+    pass
 
 
 @click.command()
@@ -1266,6 +1249,7 @@ def process_final(parameters, dataset_name):
                 "train_inputs",
                 "test_inputs",
                 "direct_prompt",
+                "zero_shot_prompt",
             ]
         ]
         split_name = split_name.replace("_", "")
@@ -1309,123 +1293,20 @@ def merge_final(parameters):
 
 @click.command()
 @click.pass_obj
-def get_final(parameters):
-    for split, options in [("test", TEST_DATASETS), ("train", TRAIN_DATASETS)]:
-        for dataset_name in options + ["all"]:
-            try:
-                dataset = load_dataset(
-                    parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset",
-                    dataset_name,
-                    split=split,
-                )
-            except Exception as e:
-                if dataset_name == "all":
-                    log_warn(
-                        f"Tried to get all, maybe you haven't run merge_final yet? Skipping...",
-                        parameters=parameters,
-                    )
-                    continue
-                else:
-                    log_error(
-                        f"Could not load dataset {dataset_name} split {split} from Hugging Face Hub. Make sure you have run the previous steps to process and push the dataset to the hub.\n{e}",
-                        parameters=parameters,
-                    )
-            df = dataset.to_pandas()
-            df.to_json(
-                f"{parameters['data_dir']}/final/{dataset_name}/{split}_filtered.jsonl",
-                orient="records",
-                lines=True,
-            )
-            log_info(
-                f"Saved final dataset {dataset_name} split {split} to {parameters['data_dir']}/final/{dataset_name}/{split}_filtered.jsonl",
-                parameters=parameters,
-            )
-            df.to_csv(
-                f"{parameters['data_dir']}/final/{dataset_name}/{split}_filtered.csv",
-                index=False,
-            )
-            log_info(
-                f"Saved final dataset {dataset_name} split {split} to {parameters['data_dir']}/final/{dataset_name}/{split}_filtered.csv",
-                parameters=parameters,
-            )
-
-
-@click.command()
-@click.option(
-    "--dataset_name",
-    required=True,
-    help="The name of the dataset to load from the Hugging Face Hub.",
-    type=click.Choice(TEST_DATASETS + TRAIN_DATASETS + ["all"]),
-)
-@click.option(
-    "--train_val_split",
-    default=0.8,
-    help="The proportion of the dataset to use for training when creating parquet files. The rest will be used for validation.",
-    type=float,
-)
-@click.pass_obj
-def load_parquets(parameters, dataset_name, train_val_split):
-    from baselines import (
-        first_reasoning_prompt,
-        get_prev_results_str,
-        get_initial_results,
-    )
-
-    def get_first_prompt(row):
-        test_func_validated = row["test_func_validated"]
-        header_start = test_func_validated.index("def test_func(")
-        header_end = test_func_validated.index("\n", header_start)
-        func_header = test_func_validated[header_start:header_end]
-        reasoning_prompt = first_reasoning_prompt.replace(
-            "[HEADER]", func_header
-        ).replace("[HYPOTHESIS]", "Not yet formed")
-        prev_results, runner = get_initial_results(
-            test_func_validated, examples=row["train_inputs"]
-        )
-        if runner is None:
-            return None
-        for inp_str, out_str, err_str in prev_results:
-            if err_str is not None:
-                return None
-        prev_results_str = get_prev_results_str(prev_results, max_previous_results=None)
-        reasoning_prompt = reasoning_prompt.replace("[PREV]", prev_results_str)
-        return reasoning_prompt
-
-    splits = []
-    if dataset_name in TEST_DATASETS + ["all"]:
-        splits.append("test")
-    if dataset_name in TRAIN_DATASETS + ["all"]:
-        splits.append("train")
-    for split in splits:
-        parquet_path = parameters["data_dir"] + f"/parquets/{dataset_name}/"
+def gen_prompts_final(parameters):
+    for dataset in TRAIN_DATASETS + TEST_DATASETS:
+        split = "train" if dataset in TRAIN_DATASETS else "test"
         dataset = load_dataset(
             parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset",
-            dataset_name,
+            dataset,
             split=split,
         )
-        dataset = dataset.map(
-            lambda x: {"prompt": [{"role": "user", "content": get_first_prompt(x)}]}
-        )
-        dataset_length = len(dataset)
-        # drop rows where prompt is None
-        dataset = dataset.filter(lambda x: x["prompt"][0]["content"] is not None)
-        if len(dataset) < dataset_length:
-            log_warn(
-                f"Dropped {dataset_length - len(dataset)}/{dataset_length} rows with invalid prompts for {dataset_name} split {split}",
-                parameters=parameters,
-            )
-        if split == "test":
-            dataset.to_parquet(parquet_path + f"test.parquet")
-        else:
-            dataset.shuffle(seed=parameters["random_seed"])
-            train_size = int(len(dataset) * train_val_split)
-            train_dataset = dataset.select(range(train_size))
-            val_dataset = dataset.select(range(train_size, len(dataset)))
-            train_dataset.to_parquet(f"{parquet_path}/train.parquet")
-            val_dataset.to_parquet(f"{parquet_path}/val.parquet")
-        log_info(
-            f"Saved {split} split of dataset {dataset_name} to parquet at {parquet_path}",
-            parameters=parameters,
+        dataset = FilteredLoader.make_train_dataset_from_hf(dataset)
+        dataset.push_to_hub(
+            parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset",
+            private=False,
+            split=split,
+            config_name=dataset,
         )
 
 
@@ -1528,8 +1409,7 @@ def main(ctx):
 main.add_command(process_raw, name="process_raw")
 main.add_command(process_final, name="process_final")
 main.add_command(merge_final, name="merge_final")
-main.add_command(get_final, name="get_final")
-main.add_command(load_parquets, name="load_parquets")
+main.add_command(gen_prompts_final, name="gen_prompts_final")
 main.add_command(expand_examples, name="expand_examples")
 
 if __name__ == "__main__":

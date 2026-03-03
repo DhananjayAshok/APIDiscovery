@@ -1,7 +1,9 @@
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from openai import OpenAI
 from time import perf_counter, sleep
-
+from utils import log_info, log_warn, log_error
+import pandas as pd
+import subprocess
 from abc import ABC, abstractmethod
 
 
@@ -68,3 +70,43 @@ class HuggingFaceModel(ModelInterface):
         text = self.tokenizer.decode(output_only_ids[0], skip_special_tokens=True)
         text = text.replace("[STOP]", "").strip()
         return text
+
+
+def call_infer(
+    run_name,
+    dataset_name,
+    split,
+    input_file,
+    output_file,
+    input_column,
+    output_column,
+    max_new_tokens,
+    parameters,
+    model=None,
+    ignore_checkpoint=False,
+):
+    if model is None:
+        log_error(
+            "Model must be specified for inference command", parameters=parameters
+        )
+    open_ai_batch_name = ""
+    if "gpt" in model:
+        open_ai_batch_name = f"{model}-{run_name}-{dataset_name}-{split}"
+    openaibatch_str = "-n " + open_ai_batch_name if open_ai_batch_name != "" else ""
+    command_string = f"bash scripts/infer.sh -i {input_file} -o {output_file} -m {model} -c {input_column} -d {output_column} -t {max_new_tokens} -g {run_name} {openaibatch_str}"
+    if ignore_checkpoint:
+        command_string += " -r yes"
+    log_info(f"Generating validation code with command: {command_string}")
+    subprocess.run(command_string, shell=True, check=True)
+    try:
+        df = pd.read_json(output_file, lines=True)
+        if "output_logits" in df.columns:
+            df.drop("output_logits", axis=1, inplace=True)
+        df.to_json(output_file, orient="records", lines=True)
+    except:
+        log_warn(
+            f"Output file {output_file} not found after inference command. This can happen for OpenAI API models. Run the command again after the batch is complete.",
+            parameters=parameters,
+        )
+        return None
+    return df

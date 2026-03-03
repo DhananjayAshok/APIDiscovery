@@ -9,7 +9,7 @@ from tqdm import tqdm
 import numpy as np
 
 
-method_orders = {"in_context": 0, "ft": 1, "zeroshot": 2, "rl": 3}
+method_orders = {"in_context": 0, "ft": 1, "zeroshot": 2, "rl": 3, "gold": 4}
 
 model_orders = {
     "Meta-Llama-3-8B-Instruct": 0,
@@ -368,7 +368,7 @@ def is_valid_file(path):
     )[-1]
     if f"description-judge-{description_judge_model}.jsonl" in path:
         return "description"
-    if f"code-judge-{code_judge_model}.jsonl" in path:
+    if f"code_prediction-judge-{code_judge_model}.jsonl" in path:
         return "code"
     if f"output_prediction-judge-{input_output_judge_model}.jsonl" in path:
         return "output_prediction"
@@ -378,7 +378,7 @@ def is_valid_file(path):
 
 
 def get_file_details(path):
-    methods = ["zeroshot", "ft", "in_context", "rl"]
+    methods = ["zeroshot", "ft", "in_context", "rl", "gold"]
     task = is_valid_file(path)
     path = os.path.basename(path)
     if task is None:

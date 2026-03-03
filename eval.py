@@ -1,122 +1,17 @@
-from ast import literal_eval
-from utils import log_warn, log_info, load_parameters, file_makedir, log_error
+from utils import (
+    log_warn,
+    log_info,
+    load_parameters,
+    file_makedir,
+    log_error,
+    RunTestFunc,
+)
 from tqdm import tqdm
 import pandas as pd
 import click
 import os
 import subprocess
-import multiprocessing
 import re
-
-
-class RunTestFunc:
-    """
-    A class to run a test function defined in code.
-    """
-
-    def __init__(self, func_code: str, timeout=0.5):
-        """
-        Initializes the RunTestFunc with the given function code. Is not safe (i.e. runs exec on func_code, ensure you do not run malicious code through here by mistake).
-
-        :param func_code: The code defining the test function. Should come from the provided dataset.
-        :type func_code: str
-        :param timeout: The maximum time in seconds to allow the function to run.
-        :type timeout: float
-        """
-        self.func_code = func_code
-        self.access_counter = 0
-        self.attempted_inputs = []
-        self.received_outputs = []
-        self.timeout = timeout
-        success = self.try_exec(func_code)
-        self._context = {"__builtins__": __builtins__}
-        if success:
-            exec(func_code, self._context)
-            self.test_func = self._context["test_func"]
-        else:
-            raise RuntimeError(
-                "Failed to exec function code, cannot initialize RunTestFunc."
-            )
-
-    @staticmethod
-    def exec_worker(func_code, queue):
-        """Helper worker to run exec and put the result in a queue."""
-        try:
-            exec(func_code, {"__builtins__": __builtins__})
-            queue.put(True)  # runs
-        except Exception as e:
-            queue.put(False)  # fails
-
-    def try_exec(self, func_code):
-        """Tries to exec the given code in a separate process with a timeout."""
-        queue = multiprocessing.Queue()
-        p = multiprocessing.Process(target=self.exec_worker, args=(func_code, queue))
-        p.start()
-        p.join(timeout=self.timeout)
-        if p.is_alive():
-            p.terminate()
-            p.join()
-            return False
-        if not queue.empty():
-            return queue.get()
-        return False
-
-    def worker(self, func, args, queue):
-        """Helper worker to run the function and put the result in a queue."""
-        try:
-            result = func(*args)
-            queue.put((result, None))
-        except Exception as e:
-            queue.put((None, str(e)))
-
-    def run_test(self, *args):
-        self.access_counter += 1
-        self.attempted_inputs.append(args)
-
-        # Use a Queue to get the return value back from the child process
-        queue = multiprocessing.Queue()
-        p = multiprocessing.Process(
-            target=self.worker, args=(self.test_func, args, queue)
-        )
-
-        p.start()
-
-        # Wait
-        p.join(timeout=self.timeout)
-
-        if p.is_alive():
-            # If the process is still running after 15s, kill it
-            p.terminate()
-            p.join()
-            self.received_outputs.append(
-                (None, f"Timeout: Function execution exceeded {self.timeout} seconds")
-            )
-            return None, f"Timeout: Function execution exceeded {self.timeout} seconds"
-
-        # If it finished, grab the result from the queue
-        if not queue.empty():
-            result = queue.get()
-            self.received_outputs.append(result)
-            return result
-        self.received_outputs.append((None, "Unknown error during execution"))
-        return None, "Unknown error during execution"
-
-    def run_test_str(self, args_str: str):
-        """
-        Runs the test function with the given arguments in string form.
-
-        :param args_str: Arguments in string form to pass to the test function.
-        :type args_str: str
-        :return: A tuple (return_value, error_message). If there is no error, error_message is None.
-        :rtype: tuple
-        """
-        try:
-            args = literal_eval(args_str)  # for safety
-        except Exception as e:
-            return None, "Invalid input args, is not valid python syntax"
-        if not isinstance(args, tuple) and not isinstance(args, list):
-            args = (args,)  # for single argument functions
-        return self.run_test(*args)
 
 
 eval_prompt = f"""
@@ -145,7 +40,7 @@ def parse_score(output):
     # look for the regex matching rating: followed by a number from 1 to 5, allowing for any amount of whitespace in between
     match = re.search(r"rating:\s*([1-5])", response)
     if match:
-        return int(match.group(1))
+        return int(match.group(1))  # convert to 0-4 scale
     else:
         log_warn("Could not find 'rating: [1-5]' in model response: " + response)
         return None
@@ -252,7 +147,13 @@ def evaluate_code_predictions(true_code, predicted_code, test_inputs):
     true_outputs = []
     predicted_outputs = []
     exact_matches = []
-    ret = [can_exec_true_code, can_exec_pred_code, true_outputs, predicted_outputs, 0.0]
+    ret = [
+        can_exec_true_code,
+        can_exec_pred_code,
+        true_outputs,
+        predicted_outputs,
+        None,
+    ]
     try:
         runner = RunTestFunc(true_code)
         ret[0] = True
@@ -266,6 +167,7 @@ def evaluate_code_predictions(true_code, predicted_code, test_inputs):
     try:
         pred_runner = RunTestFunc(predicted_code)
         ret[1] = True
+        ret[-1] = 0.0
     except Exception as e:
         return ret
     for test_input in test_inputs:
@@ -289,7 +191,7 @@ def evaluate_output_prediction(true_output, predicted_output):
     try:
         eval(predicted_output)
     except:
-        return False
+        return None
     return true_output == eval(predicted_output)
 
 
@@ -571,18 +473,3 @@ def eval_input(
         predictions_save_path=predictions_save_path,
         override_eval=override_eval,
     )
-
-
-@click.group()
-def main():
-    pass
-
-
-main.add_command(eval_description, name="description")
-main.add_command(eval_code, name="code")
-main.add_command(eval_output, name="output")
-main.add_command(eval_input, name="input")
-
-
-if __name__ == "__main__":
-    main()

@@ -1,23 +1,21 @@
 from utils.lm_inference import HuggingFaceModel, OpenAIModel
 import os
-from utils import load_parameters, log_info, file_makedir, log_warn, log_error
+from utils import (
+    load_parameters,
+    log_info,
+    file_makedir,
+    log_warn,
+    log_error,
+    get_test_func_header,
+    call_infer,
+    get_zeroshot_starting_details,
+    get_prev_results_str,
+)
 import click
-from datasets import load_dataset
-from data import RawLoaders
+from load_data import get_dataset
 from eval import RunTestFunc
 import pandas as pd
 from tqdm import tqdm
-
-
-def get_dataset(dataset_name, parameters=None):
-    parameters = load_parameters()
-    username = parameters["huggingface_repo_namespace"]
-    dset = load_dataset(
-        f"{username}/APIDiscoveryDataset", dataset_name, split="test"
-    ).to_pandas()
-    dset["train_inputs"] = dset["train_inputs"].apply(list)
-    dset["test_inputs"] = dset["test_inputs"].apply(list)
-    return dset
 
 
 def get_save_paths(dataset_name, save_name):
@@ -27,62 +25,14 @@ def get_save_paths(dataset_name, save_name):
     return save_path
 
 
-first_reasoning_prompt = f"""
-You are given a Python function with the following header:
-[HEADER]
-Your task is to try various inputs to discover what this function does.
-
-So far, you have tried the following inputs: [PREV]
-You then came up with the following running hypothesis: [HYPOTHESIS]
-
-Based on this, what kind of input will you use to test the function with next? Very briefly describe your next intended input only, and the properties it satisfies. How does this input help test the hypothesis? What is the expected output? Be extremely concise and short. 
-Your response should be extremely short and concise, just a few sentences. After the response, say [STOP]
-Now provide your reasoning below and then say [STOP]
-Reasoning:"""
-
-
-def get_prev_results_str(prev_results, max_previous_results):
-    if not prev_results:
-        return "[]"
-    results_str = "[\n"
-    to_slice = (
-        prev_results[-max_previous_results:]
-        if max_previous_results is not None
-        else prev_results
-    )
-    for inp, out, err in to_slice:
-        results_str += f"  Input: {inp} => Output: {out}, Error: {err}\n"
-    results_str += "]"
-    return results_str
-
-
-def get_initial_results(func_code, examples):
-    try:
-        runner = RunTestFunc(func_code)
-    except:
-        return None, None
-    prev_results = []
-    example_outputs = []
-    for example in examples:
-        example_outputs.append(runner.run_test_str(example))
-    for i, example_input in enumerate(examples):
-        input_str = example_input
-        output, err = example_outputs[i]
-        prev_results.append((input_str, output, err))
-    return prev_results, runner
-
-
 def zero_shot(
     func_code: str, examples, model, max_iterations=100, max_previous_results=10
 ):
-    header_start = func_code.index("def test_func(")
-    header_end = func_code.index("\n", header_start)
-    func_header = func_code[header_start:header_end]
-
-    prev_results, runner = get_initial_results(func_code, examples)
+    reasoning_prompt, runner, prev_results, func_header = get_zeroshot_starting_details(
+        func_code, examples
+    )
     concluded = False
     hypothesis = "Not yet formed"
-    reasoning_prompt = first_reasoning_prompt.replace("[HEADER]", func_header)
     input_prompt = f"""
 You are given a Python function with the following header:
 {func_header}
@@ -206,7 +156,7 @@ def run_finetuned(dataset_name, model_name, save_name, override_gen):
     else:
         input_file = f"{data_dir}/test_filtered.jsonl"
         output_file = save_path
-        df = RawLoaders.call_infer(
+        call_infer(
             run_name=save_name,
             dataset_name=dataset_name,
             split="test",
@@ -328,7 +278,7 @@ def run_eval_code(
     Takes a DataFrame with prompts, runs inference, extracts code, and saves results.
     """
     df.to_json(input_file, orient="records", lines=True)
-    df = RawLoaders.call_infer(
+    df = call_infer(
         run_name=save_name,
         dataset_name=dataset_name,
         split="test",
@@ -417,7 +367,13 @@ def do_predict_code(
     if load_name is None:
         load_name = save_name
     prediction_file = get_save_paths(dataset_name, load_name)
-    save_name = f"{save_name}_code_prediction"
+    parameters = load_parameters()
+    code_generation_model = parameters["code_generation_model"]
+    code_save_name = code_generation_model.split("/")[-1].strip()
+    if code_generation_model == "self":
+        code_generation_model = model_name
+        code_save_name = "self"
+    save_name = f"{save_name}_code_prediction-judge-{code_save_name}"
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
@@ -436,9 +392,7 @@ def do_predict_code(
             true_description = row["description"]
         predicted_description = row["predicted_description_clean"]
         test_func_str = row["test_func_validated"]
-        header_start = test_func_str.index("def test_func(")
-        header_end = test_func_str.index("\n", header_start)
-        func_header = test_func_str[header_start:header_end]
+        func_header = get_test_func_header(test_func_str)
         examples_str = get_all_examples_str(row)
         if prediction_column == "prediction":
             use_description = predicted_description
@@ -458,7 +412,7 @@ def do_predict_code(
 
     df["code_prediction_prompt"] = df.apply(make_code_prompt, axis=1)
     run_eval_code(
-        model_name=model_name,
+        model_name=code_generation_model,
         dataset_name=dataset_name,
         save_name=save_name,
         override_gen=override_gen,
@@ -549,7 +503,7 @@ def run_eval_output(
     """
     df["original_index"] = df.index
     df.to_json(input_file, orient="records", lines=True)
-    df = RawLoaders.call_infer(
+    df = call_infer(
         run_name=save_name,
         dataset_name=dataset_name,
         split="test",
@@ -611,8 +565,15 @@ def do_predict_output(
 ):
     if load_name is None:
         load_name = save_name
+
     prediction_file = get_save_paths(dataset_name, load_name)
-    save_name = f"{save_name}_output_prediction"
+    parameters = load_parameters()
+    input_output_model = parameters["input_output_prediction_model"]
+    code_save_name = input_output_model.split("/")[-1].strip()
+    if input_output_model == "self":
+        input_output_model = model_name
+        code_save_name = "self"
+    save_name = f"{save_name}_output_prediction-judge-{code_save_name}"
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
@@ -691,7 +652,7 @@ def run_eval_input(
     df["original_index"] = df.index
     df.to_json(input_file, orient="records", lines=True)
     print(input_file)
-    df = RawLoaders.call_infer(
+    df = call_infer(
         run_name=save_name,
         dataset_name=dataset_name,
         split="test",
@@ -754,7 +715,13 @@ def do_predict_input(
     if load_name is None:
         load_name = save_name
     prediction_file = get_save_paths(dataset_name, load_name)
-    save_name = f"{save_name}_input_prediction"
+    parameters = load_parameters()
+    input_output_model = parameters["input_output_prediction_model"]
+    code_save_name = input_output_model.split("/")[-1].strip()
+    if input_output_model == "self":
+        input_output_model = model_name
+        code_save_name = "self"
+    save_name = f"{save_name}_input_prediction-judge-{code_save_name}"
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
@@ -792,9 +759,7 @@ def do_predict_input(
             true_description = row["true_description"]
         description = row["predicted_description_clean"]
         test_func_str = row["test_func_validated"]
-        header_start = test_func_str.index("def test_func(")
-        header_end = test_func_str.index("\n", header_start)
-        func_header = test_func_str[header_start:header_end]
+        func_header = get_test_func_header(test_func_str)
         examples_str = get_all_examples_str(row)
         if prediction_column not in ["prediction", "true"]:
             log_error(
