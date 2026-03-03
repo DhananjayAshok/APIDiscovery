@@ -380,13 +380,14 @@ def run_eval_code(
     )
     return df
 
+
 def get_all_examples_str(row):
     if "all_examples" in row:
         examples = eval(row["all_examples"])
         examples = [
-            f"Input: {examples[i][0]} => Output: {examples[i][1]}, Error: {examples[i][2]}" 
+            f"Input: {examples[i][0]} => Output: {examples[i][1]}, Error: {examples[i][2]}"
             for i in range(len(examples))
-            ]
+        ]
     else:
         examples = row["train_inputs"]
         if isinstance(examples, str):
@@ -410,7 +411,9 @@ def get_all_examples_str(row):
     return examples_str
 
 
-def do_predict_code(model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None):
+def do_predict_code(
+    model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None
+):
     if load_name is None:
         load_name = save_name
     prediction_file = get_save_paths(dataset_name, load_name)
@@ -442,7 +445,9 @@ def do_predict_code(model_name, dataset_name, save_name, override_gen, predictio
         elif prediction_column == "true":
             use_description = true_description
         else:
-            log_error(f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'.")
+            log_error(
+                f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'."
+            )
 
         prompt = (
             code_prediction_prompt.replace("[DESCRIPTION]", use_description)
@@ -466,6 +471,7 @@ def do_predict_code(model_name, dataset_name, save_name, override_gen, predictio
         max_new_tokens=600,
     )
 
+
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
 @click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
@@ -476,8 +482,13 @@ def do_predict_code(model_name, dataset_name, save_name, override_gen, predictio
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_code(model_name, dataset_name, save_name, override_gen):
-    do_predict_code(model_name, dataset_name, save_name, override_gen, prediction_column="prediction")
-
+    do_predict_code(
+        model_name,
+        dataset_name,
+        save_name,
+        override_gen,
+        prediction_column="prediction",
+    )
 
 
 output_prediction_prompt = """
@@ -595,7 +606,9 @@ def run_eval_output(
     return original_df
 
 
-def do_predict_output(model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None):
+def do_predict_output(
+    model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None
+):
     if load_name is None:
         load_name = save_name
     prediction_file = get_save_paths(dataset_name, load_name)
@@ -619,8 +632,14 @@ def do_predict_output(model_name, dataset_name, save_name, override_gen, predict
         predicted_description = row["predicted_description_clean"]
         examples_str = get_all_examples_str(row)
         if prediction_column not in ["prediction", "true"]:
-            log_error(f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'.")
-        use_description = predicted_description if prediction_column == "prediction" else true_description
+            log_error(
+                f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'."
+            )
+        use_description = (
+            predicted_description
+            if prediction_column == "prediction"
+            else true_description
+        )
         prompt = output_prediction_prompt.replace(
             "[DESCRIPTION]", use_description
         ).replace("[EXAMPLES]", examples_str)
@@ -709,6 +728,7 @@ def run_eval_input(
             return suggested_input
         else:
             return None
+
     parse_errors = 0
     df["predicted_input"] = None
     for i, row in df.iterrows():
@@ -722,10 +742,15 @@ def run_eval_input(
     original_df["predicted_input"] = df["predicted_input"]
     original_df["target_outputs"] = target_outputs
     original_df.to_json(output_file, orient="records", lines=True)
-    log_info(f"Saved predicted inputs to {output_file} | Parse errors: {parse_errors}/{len(df)}")
+    log_info(
+        f"Saved predicted inputs to {output_file} | Parse errors: {parse_errors}/{len(df)}"
+    )
     return original_df
 
-def do_predict_input(model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None):
+
+def do_predict_input(
+    model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None
+):
     if load_name is None:
         load_name = save_name
     prediction_file = get_save_paths(dataset_name, load_name)
@@ -764,7 +789,7 @@ def do_predict_input(model_name, dataset_name, save_name, override_gen, predicti
         if "description" in row:
             true_description = row["description"]
         else:
-            true_description = row["true_description"]        
+            true_description = row["true_description"]
         description = row["predicted_description_clean"]
         test_func_str = row["test_func_validated"]
         header_start = test_func_str.index("def test_func(")
@@ -772,8 +797,12 @@ def do_predict_input(model_name, dataset_name, save_name, override_gen, predicti
         func_header = test_func_str[header_start:header_end]
         examples_str = get_all_examples_str(row)
         if prediction_column not in ["prediction", "true"]:
-            log_error(f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'.")
-        use_description = description if prediction_column == "prediction" else true_description
+            log_error(
+                f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'."
+            )
+        use_description = (
+            description if prediction_column == "prediction" else true_description
+        )
         prompt = (
             input_prediction_prompt.replace("[DESCRIPTION]", use_description)
             .replace("[HEADER]", func_header)
@@ -807,6 +836,7 @@ def do_predict_input(model_name, dataset_name, save_name, override_gen, predicti
         max_new_tokens=300,
     )
 
+
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
 @click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
@@ -817,7 +847,13 @@ def do_predict_input(model_name, dataset_name, save_name, override_gen, predicti
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_output(model_name, dataset_name, save_name, override_gen):
-    do_predict_output(model_name, dataset_name, save_name, override_gen, prediction_column="prediction")
+    do_predict_output(
+        model_name,
+        dataset_name,
+        save_name,
+        override_gen,
+        prediction_column="prediction",
+    )
 
 
 @click.command()
@@ -830,8 +866,13 @@ def predict_output(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_input(model_name, dataset_name, save_name, override_gen):
-    do_predict_input(model_name, dataset_name, save_name, override_gen, prediction_column="prediction")
-    
+    do_predict_input(
+        model_name,
+        dataset_name,
+        save_name,
+        override_gen,
+        prediction_column="prediction",
+    )
 
 
 @click.command()
@@ -844,7 +885,14 @@ def predict_input(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_gold_code(model_name, dataset_name, save_name, override_gen):
-    do_predict_code(model_name, dataset_name, "gold_" + save_name.split("_", 1)[1], override_gen, prediction_column="true", load_name=save_name)
+    do_predict_code(
+        model_name,
+        dataset_name,
+        "gold_" + save_name.split("_", 1)[1],
+        override_gen,
+        prediction_column="true",
+        load_name=save_name,
+    )
 
 
 @click.command()
@@ -857,7 +905,14 @@ def predict_gold_code(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_gold_output(model_name, dataset_name, save_name, override_gen):
-    do_predict_output(model_name, dataset_name, "gold_" + save_name.split("_", 1)[1], override_gen, prediction_column="true", load_name=save_name)
+    do_predict_output(
+        model_name,
+        dataset_name,
+        "gold_" + save_name.split("_", 1)[1],
+        override_gen,
+        prediction_column="true",
+        load_name=save_name,
+    )
 
 
 @click.command()
@@ -870,7 +925,14 @@ def predict_gold_output(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_gold_input(model_name, dataset_name, save_name, override_gen):
-    do_predict_input(model_name, dataset_name, "gold_" + save_name.split("_", 1)[1], override_gen, prediction_column="true", load_name=save_name)
+    do_predict_input(
+        model_name,
+        dataset_name,
+        "gold_" + save_name.split("_", 1)[1],
+        override_gen,
+        prediction_column="true",
+        load_name=save_name,
+    )
 
 
 @click.group()

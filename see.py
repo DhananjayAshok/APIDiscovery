@@ -9,10 +9,7 @@ from tqdm import tqdm
 import numpy as np
 
 
-method_orders = {"in_context": 0, 
-                 "ft": 1, 
-                 "zeroshot": 2, 
-                 "rl": 3}
+method_orders = {"in_context": 0, "ft": 1, "zeroshot": 2, "rl": 3}
 
 model_orders = {
     "Meta-Llama-3-8B-Instruct": 0,
@@ -33,62 +30,86 @@ model_scales = {
 parameters = load_parameters()
 
 
-def paired_bootstrap(sys1, sys2, num_samples=10000, sample_ratio=0.5, progress_title=None, parameters=None):
-  ''' Evaluate with paired boostrap
+def paired_bootstrap(
+    sys1,
+    sys2,
+    num_samples=10000,
+    sample_ratio=0.5,
+    progress_title=None,
+    parameters=None,
+):
+    """Evaluate with paired boostrap
 
-  This compares two systems, performing a significance tests with
-  paired bootstrap resampling to compare the performance of the two systems.
-  
-  :param sys1: The eval metrics (instance-wise) of system 1
-  :param sys2: The eval metrics (instance-wise) of system 2. Must be of the same length
-  :param num_samples: The number of bootstrap samples to take
-  :param sample_ratio: The ratio of samples to take every time
-  '''
-  parameters = load_parameters(parameters)
+    This compares two systems, performing a significance tests with
+    paired bootstrap resampling to compare the performance of the two systems.
 
-  sys1_scores = []
-  sys2_scores = []
-  wins = [0, 0, 0]
-  n = len(sys1)
-  if len(sys2) != n:
-    log_warn("System outputs must be of the same length for paired bootstrap evaluation." , parameters)
-    return
-  ids = list(range(n))
+    :param sys1: The eval metrics (instance-wise) of system 1
+    :param sys2: The eval metrics (instance-wise) of system 2. Must be of the same length
+    :param num_samples: The number of bootstrap samples to take
+    :param sample_ratio: The ratio of samples to take every time
+    """
+    parameters = load_parameters(parameters)
 
-  for _ in tqdm(range(num_samples), desc=progress_title):
-    # Subsample the gold and system outputs
-    reduced_ids = np.random.choice(ids,int(len(ids)*sample_ratio),replace=True)
-    reduced_sys1 = [sys1[i] for i in reduced_ids]
-    reduced_sys2 = [sys2[i] for i in reduced_ids]
-    # Calculate accuracy on the reduced sample and save stats
-    sys1_score = np.mean(reduced_sys1)
-    sys2_score = np.mean(reduced_sys2)
-    if sys1_score > sys2_score:
-      wins[0] += 1
-    elif sys1_score < sys2_score:
-      wins[1] += 1
-    else:
-      wins[2] += 1
-    sys1_scores.append(sys1_score)
-    sys2_scores.append(sys2_score)
+    sys1_scores = []
+    sys2_scores = []
+    wins = [0, 0, 0]
+    n = len(sys1)
+    if len(sys2) != n:
+        log_warn(
+            "System outputs must be of the same length for paired bootstrap evaluation.",
+            parameters,
+        )
+        return
+    ids = list(range(n))
 
-  # Print win stats
-  wins = [x/float(num_samples) for x in wins]
-  if progress_title is not None:
-    log_info(f"Results for {progress_title}:", parameters)
-  print('Win ratio: sys1=%.3f, sys2=%.3f, tie=%.3f' % (wins[0], wins[1], wins[2]))
-  if wins[0] > wins[1]:
-    print('(sys1 is superior with p value p=%.3f)\n' % (1-wins[0]))
-  elif wins[1] > wins[0]:
-    print('(sys2 is superior with p value p=%.3f)\n' % (1-wins[1]))
+    for _ in tqdm(range(num_samples), desc=progress_title):
+        # Subsample the gold and system outputs
+        reduced_ids = np.random.choice(ids, int(len(ids) * sample_ratio), replace=True)
+        reduced_sys1 = [sys1[i] for i in reduced_ids]
+        reduced_sys2 = [sys2[i] for i in reduced_ids]
+        # Calculate accuracy on the reduced sample and save stats
+        sys1_score = np.mean(reduced_sys1)
+        sys2_score = np.mean(reduced_sys2)
+        if sys1_score > sys2_score:
+            wins[0] += 1
+        elif sys1_score < sys2_score:
+            wins[1] += 1
+        else:
+            wins[2] += 1
+        sys1_scores.append(sys1_score)
+        sys2_scores.append(sys2_score)
 
-  # Print system stats
-  sys1_scores.sort()
-  sys2_scores.sort()
-  print('sys1 mean=%.3f, median=%.3f, 95%% confidence interval=[%.3f, %.3f]' %
-          (np.mean(sys1_scores), np.median(sys1_scores), sys1_scores[int(num_samples * 0.025)], sys1_scores[int(num_samples * 0.975)]))
-  print('sys2 mean=%.3f, median=%.3f, 95%% confidence interval=[%.3f, %.3f]' %
-          (np.mean(sys2_scores), np.median(sys2_scores), sys2_scores[int(num_samples * 0.025)], sys2_scores[int(num_samples * 0.975)]))
+    # Print win stats
+    wins = [x / float(num_samples) for x in wins]
+    if progress_title is not None:
+        log_info(f"Results for {progress_title}:", parameters)
+    print("Win ratio: sys1=%.3f, sys2=%.3f, tie=%.3f" % (wins[0], wins[1], wins[2]))
+    if wins[0] > wins[1]:
+        print("(sys1 is superior with p value p=%.3f)\n" % (1 - wins[0]))
+    elif wins[1] > wins[0]:
+        print("(sys2 is superior with p value p=%.3f)\n" % (1 - wins[1]))
+
+    # Print system stats
+    sys1_scores.sort()
+    sys2_scores.sort()
+    print(
+        "sys1 mean=%.3f, median=%.3f, 95%% confidence interval=[%.3f, %.3f]"
+        % (
+            np.mean(sys1_scores),
+            np.median(sys1_scores),
+            sys1_scores[int(num_samples * 0.025)],
+            sys1_scores[int(num_samples * 0.975)],
+        )
+    )
+    print(
+        "sys2 mean=%.3f, median=%.3f, 95%% confidence interval=[%.3f, %.3f]"
+        % (
+            np.mean(sys2_scores),
+            np.median(sys2_scores),
+            sys2_scores[int(num_samples * 0.025)],
+            sys2_scores[int(num_samples * 0.975)],
+        )
+    )
 
 
 def comparisons(df, metric_col, col="Method"):
@@ -99,39 +120,63 @@ def comparisons(df, metric_col, col="Method"):
         subset = df[df[col] == col_val]
         not_col_vals = subset[not_col].unique()
         for not_col_idx in range(len(not_col_vals)):
-            for not_col_idx2 in range(not_col_idx+1, len(not_col_vals)):
+            for not_col_idx2 in range(not_col_idx + 1, len(not_col_vals)):
                 try:
-                    yield (col_val, not_col_vals[not_col_idx]), subset[subset[not_col] == not_col_vals[not_col_idx]].iloc[0][metric_col], (col_val, not_col_vals[not_col_idx2]), subset[subset[not_col] == not_col_vals[not_col_idx2]].iloc[0][metric_col]
+                    yield (col_val, not_col_vals[not_col_idx]), subset[
+                        subset[not_col] == not_col_vals[not_col_idx]
+                    ].iloc[0][metric_col], (
+                        col_val,
+                        not_col_vals[not_col_idx2],
+                    ), subset[
+                        subset[not_col] == not_col_vals[not_col_idx2]
+                    ].iloc[
+                        0
+                    ][
+                        metric_col
+                    ]
                 except:
-                    log_warn(f"Skipping comparison for {col_val} with {not_col_vals[not_col_idx]} and {not_col_vals[not_col_idx2]} due to missing data in metric column.")
+                    log_warn(
+                        f"Skipping comparison for {col_val} with {not_col_vals[not_col_idx]} and {not_col_vals[not_col_idx2]} due to missing data in metric column."
+                    )
+
 
 def do_test(df, metric_col, progress_title):
-    
-    for val1, sys1, val2, sys2 in comparisons(df, metric_col):
-        paired_bootstrap(sys1, sys2, progress_title=progress_title + f" | Comparing: {val1} vs {val2} for {metric_col}")
-    for val1, sys1, val2, sys2 in comparisons(df, metric_col, col="Model"):
-        paired_bootstrap(sys1, sys2, progress_title=progress_title + f" | Comparing: {val1} vs {val2} for {metric_col}")
 
+    for val1, sys1, val2, sys2 in comparisons(df, metric_col):
+        paired_bootstrap(
+            sys1,
+            sys2,
+            progress_title=progress_title
+            + f" | Comparing: {val1} vs {val2} for {metric_col}",
+        )
+    for val1, sys1, val2, sys2 in comparisons(df, metric_col, col="Model"):
+        paired_bootstrap(
+            sys1,
+            sys2,
+            progress_title=progress_title
+            + f" | Comparing: {val1} vs {val2} for {metric_col}",
+        )
 
 
 def l(row):
-    if 'description' in row:
-        description = row['description']
+    if "description" in row:
+        description = row["description"]
     else:
-        description = row['true_description']
-    #train_inputs = row['train_inputs']
-    predicted_description = row['predicted_description']
-    score_output = row['score_output']
-    score = row['score']
-    n_queries = row['n_queries']
-    concluded = row['concluded']
-    #print(f"Train Inputs: {train_inputs}")
+        description = row["true_description"]
+    # train_inputs = row['train_inputs']
+    predicted_description = row["predicted_description"]
+    score_output = row["score_output"]
+    score = row["score"]
+    n_queries = row["n_queries"]
+    concluded = row["concluded"]
+    # print(f"Train Inputs: {train_inputs}")
     log_info(f"Description: {description}")
     log_info(f"Number of Queries: {n_queries}")
-    log_info(f"Concluded: {concluded}")    
+    log_info(f"Concluded: {concluded}")
     log_info(f"Predicted Description: {predicted_description}")
     log_info(f"Score: {score}")
     return
+
 
 class Stats:
     @staticmethod
@@ -139,10 +184,12 @@ class Stats:
         existing = df.columns
         for col in columns:
             if col not in existing:
-                log_warn(f"Column '{col}' is required but not found in the DataFrame. Existing columns: {existing}")
+                log_warn(
+                    f"Column '{col}' is required but not found in the DataFrame. Existing columns: {existing}"
+                )
                 return False
         return True
-    
+
     @staticmethod
     def make_df(dataset, eval_dicts, path_dict):
         if len(eval_dicts) == 0 or len(path_dict) == 0:
@@ -167,10 +214,9 @@ class Stats:
         df = df.sort_values(by=["Method Order", "Model Order"]).reset_index(drop=True)
         return df
 
-            
     @staticmethod
     def description(df):
-        if 'true_description' in df.columns:
+        if "true_description" in df.columns:
             df["description"] = df["true_description"]
         columns = ["score", "concluded", "n_queries", "description"]
         if not Stats.require_columns(df, columns):
@@ -188,38 +234,54 @@ class Stats:
         std_queries = df["n_queries"].std()
         concluded_percentage = df["concluded"].mean() * 100
         log_info(f"Average Score: {avg_score:.2f} ± {std_score:.2f}")
-        log_info(f"Percentage of Cases with Score of 1: {(df['score'] == 1).mean() * 100:.2f}%")
-        log_info(f"Percentage of Cases with Score of 3 or Greater: {(df['score'] >= 3).mean() * 100:.2f}%")
+        log_info(
+            f"Percentage of Cases with Score of 1: {(df['score'] == 1).mean() * 100:.2f}%"
+        )
+        log_info(
+            f"Percentage of Cases with Score of 3 or Greater: {(df['score'] >= 3).mean() * 100:.2f}%"
+        )
         log_info(f"Average Number of Queries: {avg_queries:.2f} ± {std_queries:.2f}")
         log_info(f"Percentage of Concluded Cases: {concluded_percentage:.2f}%")
-        concluded_group = df.groupby("concluded").agg({"score": ["mean", "std"], "n_queries": ["mean", "std"]})
-        #log_info(f"Average Score and Number of Queries Grouped by Conclusion Status:\n{concluded_group}")
-        df["description_length"] = df["description"].apply(lambda x: len(x.split()) if isinstance(x, str) else 0)
-        correlation = df[["score", "concluded", "n_queries", "description_length"]].corr()
-        #log_info(f"Correlation between Score, Concluded, Number of Queries, and Description Length:\n{correlation}")
-        #score_distribution = df["score"].value_counts().sort_index()
-        #log_info(f"Score Distribution:\n{score_distribution}")
+        concluded_group = df.groupby("concluded").agg(
+            {"score": ["mean", "std"], "n_queries": ["mean", "std"]}
+        )
+        # log_info(f"Average Score and Number of Queries Grouped by Conclusion Status:\n{concluded_group}")
+        df["description_length"] = df["description"].apply(
+            lambda x: len(x.split()) if isinstance(x, str) else 0
+        )
+        correlation = df[
+            ["score", "concluded", "n_queries", "description_length"]
+        ].corr()
+        # log_info(f"Correlation between Score, Concluded, Number of Queries, and Description Length:\n{correlation}")
+        # score_distribution = df["score"].value_counts().sort_index()
+        # log_info(f"Score Distribution:\n{score_distribution}")
         return {
-            "avg_score": avg_score, "std_score": std_score, 
-                "percentage_score_1": (df['score'] == 1).mean() * 100,
-                "percentage_score_2": (df['score'] == 2).mean() * 100,
-                "percentage_score_3": (df['score'] == 3).mean() * 100,
-                "percentage_score_4": (df['score'] == 4).mean() * 100,
-                "percentage_score_5": (df['score'] == 5).mean() * 100,
-                "percentage_score_3_or_greater": (df['score'] >= 3).mean() * 100,
-                "avg_queries": avg_queries, "std_queries": std_queries, 
-                "concluded_percentage": concluded_percentage, "all_scores": df["score"].tolist()
-                }
-    
+            "avg_score": avg_score,
+            "std_score": std_score,
+            "percentage_score_1": (df["score"] == 1).mean() * 100,
+            "percentage_score_2": (df["score"] == 2).mean() * 100,
+            "percentage_score_3": (df["score"] == 3).mean() * 100,
+            "percentage_score_4": (df["score"] == 4).mean() * 100,
+            "percentage_score_5": (df["score"] == 5).mean() * 100,
+            "percentage_score_3_or_greater": (df["score"] >= 3).mean() * 100,
+            "avg_queries": avg_queries,
+            "std_queries": std_queries,
+            "concluded_percentage": concluded_percentage,
+            "all_scores": df["score"].tolist(),
+        }
+
     def plot_description(dataset, eval_dicts, path_dicts):
-        """
-        """
-        os.makedirs(f"results/figure_dfs/{dataset}", exist_ok=True)        
+        """ """
+        os.makedirs(f"results/figure_dfs/{dataset}", exist_ok=True)
         df = Stats.make_df(dataset, eval_dicts, path_dicts)
         if df is None:
             log_warn("No data available to plot.")
             return
-        df.to_json(f"results/figure_dfs/{dataset}/description_stats.jsonl", orient="records", lines=True)
+        df.to_json(
+            f"results/figure_dfs/{dataset}/description_stats.jsonl",
+            orient="records",
+            lines=True,
+        )
 
     def plot_exact_match(dataset, title, eval_dicts, path_dicts, column):
         os.makedirs(f"results/figures/{dataset}", exist_ok=True)
@@ -227,18 +289,26 @@ class Stats:
         if df is None:
             log_warn("No data available to plot.")
             return
-        df.to_json(f"results/figure_dfs/{dataset}/{title}_stats.jsonl", orient="records", lines=True)
+        df.to_json(
+            f"results/figure_dfs/{dataset}/{title}_stats.jsonl",
+            orient="records",
+            lines=True,
+        )
 
     def plot_code(dataset, eval_dicts, path_dicts):
-        Stats.plot_exact_match(dataset, "code", eval_dicts, path_dicts, "avg_exact_match")
+        Stats.plot_exact_match(
+            dataset, "code", eval_dicts, path_dicts, "avg_exact_match"
+        )
 
     def plot_output_prediction(dataset, eval_dicts, path_dicts):
-        Stats.plot_exact_match(dataset, "output", eval_dicts, path_dicts, "avg_exact_match")
+        Stats.plot_exact_match(
+            dataset, "output", eval_dicts, path_dicts, "avg_exact_match"
+        )
 
     def plot_input_prediction(dataset, eval_dicts, path_dicts):
-        Stats.plot_exact_match(dataset, "input", eval_dicts, path_dicts, "avg_exact_match")
-
-
+        Stats.plot_exact_match(
+            dataset, "input", eval_dicts, path_dicts, "avg_exact_match"
+        )
 
     @staticmethod
     def exact_match_metric(df, column):
@@ -256,38 +326,46 @@ class Stats:
         percentage_exact_match_1 = (df[column] == 1).mean() * 100
         percentage_exact_match_05_or_greater = (df[column] >= 0.5).mean() * 100
         percentage_exact_match_0 = (df[column] == 0).mean() * 100
-        log_info(f"Average Exact Match Score: {avg_exact_match:.2f} ± {std_exact_match:.2f}")
-        #log_info(f"Exact Match Score Distribution:\n{exact_match_distribution}")
-        log_info(f"Percentage of Cases with Exact Match Score of 1: {percentage_exact_match_1:.2f}%")
-        log_info(f"Percentage of Cases with Exact Match Score of 0.5 or Greater: {percentage_exact_match_05_or_greater:.2f}%")
-        log_info(f"Percentage of Cases with Exact Match Score of 0: {percentage_exact_match_0:.2f}%")
-        #log_info(df[column].describe())
+        log_info(
+            f"Average Exact Match Score: {avg_exact_match:.2f} ± {std_exact_match:.2f}"
+        )
+        # log_info(f"Exact Match Score Distribution:\n{exact_match_distribution}")
+        log_info(
+            f"Percentage of Cases with Exact Match Score of 1: {percentage_exact_match_1:.2f}%"
+        )
+        log_info(
+            f"Percentage of Cases with Exact Match Score of 0.5 or Greater: {percentage_exact_match_05_or_greater:.2f}%"
+        )
+        log_info(
+            f"Percentage of Cases with Exact Match Score of 0: {percentage_exact_match_0:.2f}%"
+        )
+        # log_info(df[column].describe())
         return {
-            "avg_exact_match": avg_exact_match, 
-            "std_exact_match": std_exact_match, 
+            "avg_exact_match": avg_exact_match,
+            "std_exact_match": std_exact_match,
             "percentage_exact_match_1": percentage_exact_match_1,
             "percentage_exact_match_05_or_greater": percentage_exact_match_05_or_greater,
             "percentage_exact_match_0": percentage_exact_match_0,
-            "all_exact_matches": df[column].tolist()
+            "all_exact_matches": df[column].tolist(),
         }
 
     def code(df):
         return Stats.exact_match_metric(df, "predicted_outputs_exact_match")
-    
+
     def output_prediction(df):
         return Stats.exact_match_metric(df, "output_prediction_correct_micro")
-    
 
     def input_prediction(df):
         return Stats.exact_match_metric(df, "input_prediction_exact_match_micro")
 
-        
 
 def is_valid_file(path):
     # description pattern is method_model-dataset-judge-judgemodel.jsonl
     description_judge_model = parameters["evaluation_model_name"].split("/")[-1]
     code_judge_model = parameters["code_generation_model_name"].split("/")[-1]
-    input_output_judge_model = parameters["input_output_prediction_model_name"].split("/")[-1]
+    input_output_judge_model = parameters["input_output_prediction_model_name"].split(
+        "/"
+    )[-1]
     if f"description-judge-{description_judge_model}.jsonl" in path:
         return "description"
     if f"code-judge-{code_judge_model}.jsonl" in path:
@@ -298,10 +376,11 @@ def is_valid_file(path):
         return "input_prediction"
     return None
 
+
 def get_file_details(path):
     methods = ["zeroshot", "ft", "in_context", "rl"]
     task = is_valid_file(path)
-    path = os.path.basename(path)    
+    path = os.path.basename(path)
     if task is None:
         return None
     flag = False
@@ -309,27 +388,20 @@ def get_file_details(path):
     for method in methods:
         if path.startswith(method):
             flag = True
-            rest_of = path[len(method)+1:]
+            rest_of = path[len(method) + 1 :]
             break
     if not flag:
         return None
     model_name = rest_of.split("_")[0]
-    return {
-        "method": method,
-        "model": model_name,
-        "task": task
-    }
-
-        
-
+    return {"method": method, "model": model_name, "task": task}
 
 
 @click.command()
-@click.option('--n', default=1, help='Number of random samples to display')
-@click.option('--method', default="zeroshot", help='Method to filter by')
-@click.option('--dataset', default="humaneval", help='Dataset to filter by')
-@click.option('--judge', default="Llama-3.1-8B-Instruct", help='Judge to filter by')
-@click.option('--model', default="Meta-Llama-3-8B-Instruct", help='Model to filter by')
+@click.option("--n", default=1, help="Number of random samples to display")
+@click.option("--method", default="zeroshot", help="Method to filter by")
+@click.option("--dataset", default="humaneval", help="Dataset to filter by")
+@click.option("--judge", default="Llama-3.1-8B-Instruct", help="Judge to filter by")
+@click.option("--model", default="Meta-Llama-3-8B-Instruct", help="Model to filter by")
 def d(n, method, dataset, judge, model):
     path = f"results/{dataset}/{method}_{model}-{dataset}-judge-{judge}.jsonl"
     df = pd.read_json(path, lines=True)
@@ -340,14 +412,27 @@ def d(n, method, dataset, judge, model):
 
 
 @click.command()
-@click.option("--kind", default=None, help="Kind of statistics to compute (description, code, output_prediction, input_prediction, or None)")
-@click.option('--method', default=None, help='Method to filter by. Will filter by prefix in filename')
-@click.option('--dataset', default=None, help='Dataset to filter by.')
-@click.option('--model', default=None, help='Model to filter by.')
+@click.option(
+    "--kind",
+    default=None,
+    help="Kind of statistics to compute (description, code, output_prediction, input_prediction, or None)",
+)
+@click.option(
+    "--method",
+    default=None,
+    help="Method to filter by. Will filter by prefix in filename",
+)
+@click.option("--dataset", default=None, help="Dataset to filter by.")
+@click.option("--model", default=None, help="Model to filter by.")
 def stats_all(kind, method, dataset, model):
     path = f"results/"
     figure_path = f"results/figures/"
-    valid_stats = {"description": [], "code": [], "output_prediction": [], "input_prediction": []}
+    valid_stats = {
+        "description": [],
+        "code": [],
+        "output_prediction": [],
+        "input_prediction": [],
+    }
     path_mapper = {}
     df_mapper = {}
     if kind == None:
@@ -375,11 +460,11 @@ def stats_all(kind, method, dataset, model):
             if stat_type and stat_type in allowed_kinds:
                 valid_stats[stat_type].append(file_path)
                 path_mapper[file_path] = get_file_details(file_path)
-                path_mapper[file_path]["dataset"] = use_dataset                
+                path_mapper[file_path]["dataset"] = use_dataset
                 if use_dataset not in found_datasets:
                     found_datasets.append(use_dataset)
             else:
-                #log_warn(f"Skipping invalid file: {file_path}")
+                # log_warn(f"Skipping invalid file: {file_path}")
                 pass
 
     for stat_type, files in valid_stats.items():
@@ -410,19 +495,15 @@ def stats_all(kind, method, dataset, model):
                 Stats.plot_output_prediction(dataset, df_mapper, path_mapper)
             elif stat_type == "input_prediction":
                 Stats.plot_input_prediction(dataset, df_mapper, path_mapper)
-        
-
-
 
 
 @click.group()
 def cli():
     pass
 
+
 cli.add_command(d, name="show")
 cli.add_command(stats_all, name="stats")
 
 if __name__ == "__main__":
     cli()
-
-

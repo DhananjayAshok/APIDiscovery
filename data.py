@@ -501,7 +501,7 @@ def decode_shift(s: str):
         max_new_tokens,
         parameters,
         model=None,
-        ignore_checkpoint=False
+        ignore_checkpoint=False,
     ):
         if model is None:
             model = parameters["benchmark_creation_model"]
@@ -1306,6 +1306,7 @@ def merge_final(parameters):
             config_name="all",
         )
 
+
 @click.command()
 @click.pass_obj
 def get_final(parameters):
@@ -1316,18 +1317,37 @@ def get_final(parameters):
                     parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset",
                     dataset_name,
                     split=split,
-                )    
+                )
             except Exception as e:
                 if dataset_name == "all":
-                    log_warn(f"Tried to get all, maybe you haven't run merge_final yet? Skipping...", parameters=parameters)
+                    log_warn(
+                        f"Tried to get all, maybe you haven't run merge_final yet? Skipping...",
+                        parameters=parameters,
+                    )
                     continue
                 else:
-                    log_error(f"Could not load dataset {dataset_name} split {split} from Hugging Face Hub. Make sure you have run the previous steps to process and push the dataset to the hub.\n{e}", parameters=parameters)
+                    log_error(
+                        f"Could not load dataset {dataset_name} split {split} from Hugging Face Hub. Make sure you have run the previous steps to process and push the dataset to the hub.\n{e}",
+                        parameters=parameters,
+                    )
             df = dataset.to_pandas()
-            df.to_json(f"{parameters['data_dir']}/final/{dataset_name}/{split}_filtered.jsonl", orient="records", lines=True)
-            log_info(f"Saved final dataset {dataset_name} split {split} to {parameters['data_dir']}/final/{dataset_name}/{split}_filtered.jsonl", parameters=parameters)
-            df.to_csv(f"{parameters['data_dir']}/final/{dataset_name}/{split}_filtered.csv", index=False)
-            log_info(f"Saved final dataset {dataset_name} split {split} to {parameters['data_dir']}/final/{dataset_name}/{split}_filtered.csv", parameters=parameters)
+            df.to_json(
+                f"{parameters['data_dir']}/final/{dataset_name}/{split}_filtered.jsonl",
+                orient="records",
+                lines=True,
+            )
+            log_info(
+                f"Saved final dataset {dataset_name} split {split} to {parameters['data_dir']}/final/{dataset_name}/{split}_filtered.jsonl",
+                parameters=parameters,
+            )
+            df.to_csv(
+                f"{parameters['data_dir']}/final/{dataset_name}/{split}_filtered.csv",
+                index=False,
+            )
+            log_info(
+                f"Saved final dataset {dataset_name} split {split} to {parameters['data_dir']}/final/{dataset_name}/{split}_filtered.csv",
+                parameters=parameters,
+            )
 
 
 @click.command()
@@ -1345,14 +1365,23 @@ def get_final(parameters):
 )
 @click.pass_obj
 def load_parquets(parameters, dataset_name, train_val_split):
-    from baselines import first_reasoning_prompt, get_prev_results_str, get_initial_results
+    from baselines import (
+        first_reasoning_prompt,
+        get_prev_results_str,
+        get_initial_results,
+    )
+
     def get_first_prompt(row):
         test_func_validated = row["test_func_validated"]
         header_start = test_func_validated.index("def test_func(")
         header_end = test_func_validated.index("\n", header_start)
         func_header = test_func_validated[header_start:header_end]
-        reasoning_prompt = first_reasoning_prompt.replace("[HEADER]", func_header).replace("[HYPOTHESIS]", "Not yet formed")
-        prev_results, runner = get_initial_results(test_func_validated, examples=row["train_inputs"])
+        reasoning_prompt = first_reasoning_prompt.replace(
+            "[HEADER]", func_header
+        ).replace("[HYPOTHESIS]", "Not yet formed")
+        prev_results, runner = get_initial_results(
+            test_func_validated, examples=row["train_inputs"]
+        )
         if runner is None:
             return None
         for inp_str, out_str, err_str in prev_results:
@@ -1378,10 +1407,13 @@ def load_parquets(parameters, dataset_name, train_val_split):
             lambda x: {"prompt": [{"role": "user", "content": get_first_prompt(x)}]}
         )
         dataset_length = len(dataset)
-        #drop rows where prompt is None
+        # drop rows where prompt is None
         dataset = dataset.filter(lambda x: x["prompt"][0]["content"] is not None)
         if len(dataset) < dataset_length:
-            log_warn(f"Dropped {dataset_length - len(dataset)}/{dataset_length} rows with invalid prompts for {dataset_name} split {split}", parameters=parameters)
+            log_warn(
+                f"Dropped {dataset_length - len(dataset)}/{dataset_length} rows with invalid prompts for {dataset_name} split {split}",
+                parameters=parameters,
+            )
         if split == "test":
             dataset.to_parquet(parquet_path + f"test.parquet")
         else:
@@ -1399,16 +1431,21 @@ def load_parquets(parameters, dataset_name, train_val_split):
 
 def expand_dataset_examples(parameters, dataset_name, split):
     from eval import RunTestFunc
+
     dataset = load_dataset(
         parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset",
         dataset_name,
         split=split,
-    )    
+    )
     dataset_df = dataset.to_pandas()
     # will have columns: test_func_validated, description, train_inputs, test_inputs. We want more test_inputs
     lm = HuggingFaceModel(parameters["benchmark_expansion_model"])
     n_examples = {"before": [], "after": [], "invalid": [], "generated": []}
-    for index, row in tqdm(dataset_df.iterrows(), total=len(dataset_df), desc=f"Expanding examples for {dataset_name} split {split}"):
+    for index, row in tqdm(
+        dataset_df.iterrows(),
+        total=len(dataset_df),
+        desc=f"Expanding examples for {dataset_name} split {split}",
+    ):
         test_func_code = row["test_func_validated"]
         try:
             runner = RunTestFunc(test_func_code)
@@ -1438,14 +1475,20 @@ def expand_dataset_examples(parameters, dataset_name, split):
         new_inputs = clean_inputs
         n_examples["generated"].append(n_candidates)
         n_examples["invalid"].append(n_candidates - len(new_inputs))
-        n_examples["before"].append(len(existing_inputs))        
+        n_examples["before"].append(len(existing_inputs))
         all_inputs = list(set(list(existing_inputs) + new_inputs))
         n_examples["after"].append(len(all_inputs))
         dataset_df.at[index, "test_inputs"] = all_inputs
 
     # log info about how many examples were added on average
-    log_info(f"Expanded examples for {dataset_name} split {split}. On average, the number of test inputs increased from {sum(n_examples['before'])/len(n_examples['before']):.2f} to {sum(n_examples['after'])/len(n_examples['after']):.2f} per entry.", parameters=parameters)    
-    log_info(f"On average, {sum(n_examples['invalid'])/len(n_examples['invalid']):.2f}/{(sum(n_examples['generated'])/len(n_examples['generated'])):.2f} of the new examples per entry were invalid and removed after testing against the function.", parameters=parameters)
+    log_info(
+        f"Expanded examples for {dataset_name} split {split}. On average, the number of test inputs increased from {sum(n_examples['before'])/len(n_examples['before']):.2f} to {sum(n_examples['after'])/len(n_examples['after']):.2f} per entry.",
+        parameters=parameters,
+    )
+    log_info(
+        f"On average, {sum(n_examples['invalid'])/len(n_examples['invalid']):.2f}/{(sum(n_examples['generated'])/len(n_examples['generated'])):.2f} of the new examples per entry were invalid and removed after testing against the function.",
+        parameters=parameters,
+    )
     dataset = Dataset.from_pandas(dataset_df)
     dataset.push_to_hub(
         parameters["huggingface_repo_namespace"] + "/APIDiscoveryDataset",
@@ -1453,6 +1496,7 @@ def expand_dataset_examples(parameters, dataset_name, split):
         split=split,
         config_name=dataset_name,
     )
+
 
 @click.command()
 @click.option(
