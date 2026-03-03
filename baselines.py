@@ -368,7 +368,7 @@ def do_predict_code(
         load_name = save_name
     prediction_file = get_save_paths(dataset_name, load_name)
     parameters = load_parameters()
-    code_generation_model = parameters["code_generation_model"]
+    code_generation_model = parameters["code_generation_model_name"]
     code_save_name = code_generation_model.split("/")[-1].strip()
     if code_generation_model == "self":
         code_generation_model = model_name
@@ -568,7 +568,7 @@ def do_predict_output(
 
     prediction_file = get_save_paths(dataset_name, load_name)
     parameters = load_parameters()
-    input_output_model = parameters["input_output_prediction_model"]
+    input_output_model = parameters["input_output_prediction_model_name"]
     code_save_name = input_output_model.split("/")[-1].strip()
     if input_output_model == "self":
         input_output_model = model_name
@@ -716,7 +716,7 @@ def do_predict_input(
         load_name = save_name
     prediction_file = get_save_paths(dataset_name, load_name)
     parameters = load_parameters()
-    input_output_model = parameters["input_output_prediction_model"]
+    input_output_model = parameters["input_output_prediction_model_name"]
     code_save_name = input_output_model.split("/")[-1].strip()
     if input_output_model == "self":
         input_output_model = model_name

@@ -9,7 +9,7 @@ from tqdm import tqdm
 import numpy as np
 
 
-method_orders = {"in_context": 0, "ft": 1, "zeroshot": 2, "rl": 3, "gold": 4}
+method_orders = {"in-context": 0, "ft": 1, "zeroshot": 2, "rl": 3, "gold": 4}
 
 model_orders = {
     "Meta-Llama-3-8B-Instruct": 0,
@@ -208,7 +208,7 @@ class Stats:
         if len(data) == 0:
             return None
         df = pd.DataFrame(data, columns=columns)
-        # sort the dataframe by model order and then by method order (in_context, ft, zeroshot, rl)
+        # sort the dataframe by model order and then by method order
         df["Method Order"] = df["Method"].apply(lambda x: method_orders[x])
         df["Model Order"] = df["Model"].apply(lambda x: model_orders[x])
         df = df.sort_values(by=["Method Order", "Model Order"]).reset_index(drop=True)
@@ -366,19 +366,21 @@ def is_valid_file(path):
     input_output_judge_model = parameters["input_output_prediction_model_name"].split(
         "/"
     )[-1]
-    if f"description-judge-{description_judge_model}.jsonl" in path:
+    if f"description_judge-{description_judge_model}.jsonl" in path:
         return "description"
-    if f"code_prediction-judge-{code_judge_model}.jsonl" in path:
+    if f"code_prediction_judge-{code_judge_model}.jsonl" in path:
         return "code"
-    if f"output_prediction-judge-{input_output_judge_model}.jsonl" in path:
+    if f"output_prediction_judge-{input_output_judge_model}.jsonl" in path:
         return "output_prediction"
-    if f"input_prediction-judge-{input_output_judge_model}.jsonl" in path:
+    if f"input_prediction_judge-{input_output_judge_model}.jsonl" in path:
         return "input_prediction"
+    #print(path)
+    #breakpoint()
     return None
 
 
 def get_file_details(path):
-    methods = ["zeroshot", "ft", "in_context", "rl", "gold"]
+    methods = ["zeroshot", "ft", "in-context", "rl", "gold"]
     task = is_valid_file(path)
     path = os.path.basename(path)
     if task is None:
