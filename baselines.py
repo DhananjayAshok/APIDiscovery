@@ -844,7 +844,7 @@ def predict_input(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_gold_code(model_name, dataset_name, save_name, override_gen):
-    do_predict_code(model_name, dataset_name, "gold_" + save_name.split("_", 1), override_gen, prediction_column="true", load_name=save_name)
+    do_predict_code(model_name, dataset_name, "gold_" + save_name.split("_", 1)[1], override_gen, prediction_column="true", load_name=save_name)
 
 
 @click.command()
@@ -857,7 +857,7 @@ def predict_gold_code(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_gold_output(model_name, dataset_name, save_name, override_gen):
-    do_predict_output(model_name, dataset_name, "gold_" + save_name.split("_", 1), override_gen, prediction_column="true", load_name=save_name)
+    do_predict_output(model_name, dataset_name, "gold_" + save_name.split("_", 1)[1], override_gen, prediction_column="true", load_name=save_name)
 
 
 @click.command()
@@ -870,7 +870,7 @@ def predict_gold_output(model_name, dataset_name, save_name, override_gen):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def predict_gold_input(model_name, dataset_name, save_name, override_gen):
-    do_predict_input(model_name, dataset_name, "gold_" + save_name.split("_", 1), override_gen, prediction_column="true", load_name=save_name)
+    do_predict_input(model_name, dataset_name, "gold_" + save_name.split("_", 1)[1], override_gen, prediction_column="true", load_name=save_name)
 
 
 @click.group()

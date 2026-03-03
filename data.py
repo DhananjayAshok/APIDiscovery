@@ -1379,7 +1379,7 @@ def load_parquets(parameters, dataset_name, train_val_split):
         )
         dataset_length = len(dataset)
         #drop rows where prompt is None
-        dataset = dataset.filter(lambda x: x["prompt"] is not None)
+        dataset = dataset.filter(lambda x: x["prompt"][0]["content"] is not None)
         if len(dataset) < dataset_length:
             log_warn(f"Dropped {dataset_length - len(dataset)}/{dataset_length} rows with invalid prompts for {dataset_name} split {split}", parameters=parameters)
         if split == "test":

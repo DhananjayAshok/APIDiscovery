@@ -195,7 +195,7 @@ def score_description_predictions(
     parameters = load_parameters()
     model = parameters["evaluation_model_name"]
     model_save_name = model.split("/")[-1].strip()
-    save_name = f"{save_name}-{dataset_name}-judge-{model_save_name}"
+    save_name = f"{save_name}_{dataset_name}_judge-{model_save_name}"
     evaluation_path = os.path.abspath(
         f"results/{dataset_name}/" + save_name + ".jsonl"
     )
