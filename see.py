@@ -81,35 +81,40 @@ def paired_bootstrap(
 
     # Print win stats
     wins = [x / float(num_samples) for x in wins]
-    if progress_title is not None:
-        log_info(f"Results for {progress_title}:", parameters)
-    print("Win ratio: sys1=%.3f, sys2=%.3f, tie=%.3f" % (wins[0], wins[1], wins[2]))
+    #print("Win ratio: sys1=%.3f, sys2=%.3f, tie=%.3f" % (wins[0], wins[1], wins[2]))
     if wins[0] > wins[1]:
-        print("(sys1 is superior with p value p=%.3f)\n" % (1 - wins[0]))
+        return 1 - wins[0]
+        #print("(sys1 is superior with p value p=%.3f)\n" % (1 - wins[0]))
     elif wins[1] > wins[0]:
-        print("(sys2 is superior with p value p=%.3f)\n" % (1 - wins[1]))
+        return 1 - wins[1]
+        # print("(sys2 is superior with p value p=%.3f)\n" % (1 - wins[1]))
+    else:
+        return 1.0
+        # print("No significant difference between sys1 and sys2 (p=1.000)\n")
 
     # Print system stats
     sys1_scores.sort()
     sys2_scores.sort()
-    print(
-        "sys1 mean=%.3f, median=%.3f, 95%% confidence interval=[%.3f, %.3f]"
-        % (
-            np.mean(sys1_scores),
-            np.median(sys1_scores),
-            sys1_scores[int(num_samples * 0.025)],
-            sys1_scores[int(num_samples * 0.975)],
-        )
-    )
-    print(
-        "sys2 mean=%.3f, median=%.3f, 95%% confidence interval=[%.3f, %.3f]"
-        % (
-            np.mean(sys2_scores),
-            np.median(sys2_scores),
-            sys2_scores[int(num_samples * 0.025)],
-            sys2_scores[int(num_samples * 0.975)],
-        )
-    )
+    #log_info(
+    #    "sys1 mean=%.3f, median=%.3f, 95%% confidence interval=[%.3f, %.3f]"
+    #    % (
+    #        np.mean(sys1_scores),
+    #        np.median(sys1_scores),
+    #        sys1_scores[int(num_samples * 0.025)],
+    #        sys1_scores[int(num_samples * 0.975)],
+    #    )
+    #)
+    #log_info(
+    #    "sys2 mean=%.3f, median=%.3f, 95%% confidence interval=[%.3f, %.3f]"
+    #    % (
+    #        np.mean(sys2_scores),
+    #        np.median(sys2_scores),
+    #        sys2_scores[int(num_samples * 0.025)],
+    #        sys2_scores[int(num_samples * 0.975)],
+    #    )
+    #)
+
+
 
 
 def comparisons(df, metric_col, col="Method"):
@@ -140,22 +145,27 @@ def comparisons(df, metric_col, col="Method"):
                     )
 
 
-def do_test(df, metric_col, progress_title):
-
+def do_test(df, metric_col, dataset, save_name):
+    columns = ["Method 1", "Model 1", "Method 2", "Model 2", "p-value"]
+    data = []
     for val1, sys1, val2, sys2 in comparisons(df, metric_col):
-        paired_bootstrap(
+        p_val = paired_bootstrap(
             sys1,
             sys2,
-            progress_title=progress_title
-            + f" | Comparing: {val1} vs {val2} for {metric_col}",
         )
+        data.append([val1[0], val1[1], val2[0], val2[1], p_val])
     for val1, sys1, val2, sys2 in comparisons(df, metric_col, col="Model"):
-        paired_bootstrap(
+        p_val = paired_bootstrap(
             sys1,
             sys2,
-            progress_title=progress_title
-            + f" | Comparing: {val1} vs {val2} for {metric_col}",
         )
+        data.append([val1[0], val1[1], val2[0], val2[1], p_val])
+    result_df = pd.DataFrame(data, columns=columns)
+    os.makedirs(f"results/statistical_tests/{dataset}", exist_ok=True)
+    result_df.to_csv(f"results/statistical_tests/{dataset}/{save_name}.csv", index=False)
+    log_info(f"Saved statistical test results to results/statistical_tests/{dataset}/{save_name}.csv")
+    return result_df
+
 
 
 def l(row):
@@ -270,7 +280,7 @@ class Stats:
             "all_scores": df["score"].tolist(),
         }
 
-    def plot_description(dataset, eval_dicts, path_dicts):
+    def save_description(dataset, eval_dicts, path_dicts):
         """ """
         os.makedirs(f"results/figure_dfs/{dataset}", exist_ok=True)
         df = Stats.make_df(dataset, eval_dicts, path_dicts)
@@ -282,8 +292,10 @@ class Stats:
             orient="records",
             lines=True,
         )
+        log_info(f"Saved description stats dataframe for dataset {dataset} with {len(df)} rows to results/figure_dfs/{dataset}/description_stats.jsonl")
+        do_test(df, "all_scores", dataset, "description")
 
-    def plot_exact_match(dataset, title, eval_dicts, path_dicts, column):
+    def save_exact_match(dataset, title, eval_dicts, path_dicts):
         os.makedirs(f"results/figures/{dataset}", exist_ok=True)
         df = Stats.make_df(dataset, eval_dicts, path_dicts)
         if df is None:
@@ -294,20 +306,22 @@ class Stats:
             orient="records",
             lines=True,
         )
+        log_info(f"Saved {title} stats dataframe for dataset {dataset} with {len(df)} rows to results/figure_dfs/{dataset}/{title}_stats.jsonl")
+        do_test(df, "all_exact_matches", dataset, title)
 
-    def plot_code(dataset, eval_dicts, path_dicts):
-        Stats.plot_exact_match(
-            dataset, "code", eval_dicts, path_dicts, "avg_exact_match"
+    def save_code(dataset, eval_dicts, path_dicts):
+        Stats.save_exact_match(
+            dataset, "code", eval_dicts, path_dicts,
         )
 
-    def plot_output_prediction(dataset, eval_dicts, path_dicts):
-        Stats.plot_exact_match(
-            dataset, "output", eval_dicts, path_dicts, "avg_exact_match"
+    def save_output_prediction(dataset, eval_dicts, path_dicts):
+        Stats.save_exact_match(
+            dataset, "output", eval_dicts, path_dicts, 
         )
 
-    def plot_input_prediction(dataset, eval_dicts, path_dicts):
-        Stats.plot_exact_match(
-            dataset, "input", eval_dicts, path_dicts, "avg_exact_match"
+    def save_input_prediction(dataset, eval_dicts, path_dicts):
+        Stats.save_exact_match(
+            dataset, "input", eval_dicts, path_dicts, 
         )
 
     @staticmethod
@@ -490,13 +504,13 @@ def stats_all(kind, method, dataset, model):
                 df_mapper[file] = stats
         for dataset in found_datasets:
             if stat_type == "description":
-                Stats.plot_description(dataset, df_mapper, path_mapper)
+                Stats.save_description(dataset, df_mapper, path_mapper)
             if stat_type == "code":
-                Stats.plot_code(dataset, df_mapper, path_mapper)
+                Stats.save_code(dataset, df_mapper, path_mapper)
             elif stat_type == "output_prediction":
-                Stats.plot_output_prediction(dataset, df_mapper, path_mapper)
+                Stats.save_output_prediction(dataset, df_mapper, path_mapper)
             elif stat_type == "input_prediction":
-                Stats.plot_input_prediction(dataset, df_mapper, path_mapper)
+                Stats.save_input_prediction(dataset, df_mapper, path_mapper)
 
 
 @click.group()
