@@ -384,7 +384,7 @@ def do_predict_code(
     if code_generation_model == "self":
         code_generation_model = model_name
         code_save_name = "self"
-    save_name = f"{save_name}_code_prediction-judge-{code_save_name}"
+    save_name = f"{save_name}_code_prediction_judge-{code_save_name}"
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
@@ -584,7 +584,7 @@ def do_predict_output(
     if input_output_model == "self":
         input_output_model = model_name
         code_save_name = "self"
-    save_name = f"{save_name}_output_prediction-judge-{code_save_name}"
+    save_name = f"{save_name}_output_prediction_judge-{code_save_name}"
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
@@ -732,7 +732,7 @@ def do_predict_input(
     if input_output_model == "self":
         input_output_model = model_name
         code_save_name = "self"
-    save_name = f"{save_name}_input_prediction-judge-{code_save_name}"
+    save_name = f"{save_name}_input_prediction_judge-{code_save_name}"
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
