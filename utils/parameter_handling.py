@@ -53,7 +53,7 @@ def load_parameters(parameters=None):
         ):  # this is a flag that secondary parameters need to be computed
             compute_secondary_parameters(parameters)
         return parameters
-    essential_keys = ["storage_dir", "results_dir", "figure_force_save"]
+    essential_keys = ["storage_dir", "results_dir", "figure_skip_show"]
     project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     params = {"project_root": project_root}
     logger = get_logger()
