@@ -62,7 +62,7 @@ def paired_bootstrap(
         return
     ids = list(range(n))
 
-    for _ in tqdm(range(num_samples), desc=progress_title):
+    for _ in range(num_samples):
         # Subsample the gold and system outputs
         reduced_ids = np.random.choice(ids, int(len(ids) * sample_ratio), replace=True)
         reduced_sys1 = [sys1[i] for i in reduced_ids]
@@ -148,6 +148,7 @@ def comparisons(df, metric_col, col="Method"):
 def do_test(df, metric_col, dataset, save_name):
     columns = ["Method 1", "Model 1", "Method 2", "Model 2", "p-value"]
     data = []
+    log_info(f"Performing statistical tests for dataset {dataset} and metric {metric_col}")
     for val1, sys1, val2, sys2 in comparisons(df, metric_col):
         p_val = paired_bootstrap(
             sys1,
@@ -380,7 +381,7 @@ def is_valid_file(path):
     input_output_judge_model = parameters["input_output_prediction_model_name"].split(
         "/"
     )[-1]
-    if f"description_judge-{description_judge_model}.jsonl" in path:
+    if f"description_prediction_judge-{description_judge_model}.jsonl" in path:
         return "description"
     if f"code_prediction_judge-{code_judge_model}.jsonl" in path:
         return "code"
