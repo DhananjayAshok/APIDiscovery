@@ -81,6 +81,13 @@ def parse_eval(evaluation_path):
     log_info(f"Saved scored predictions to {evaluation_path}")
 
 
+def rectify_description(x):
+    if isinstance(x, list):
+        x = x[0] if len(x) > 0 else ""
+    x = x.strip()
+    x = x.split("\n")[0]  # take only the first line if there are multiple
+    return x
+
 def score_description_predictions(
     *,
     predictions_save_path,
@@ -102,14 +109,6 @@ def score_description_predictions(
             skip = True
     if not skip:
         df = pd.read_json(predictions_save_path, lines=True)
-
-        def rectify_description(x):
-            if isinstance(x, list):
-                x = x[0] if len(x) > 0 else ""
-            x = x.strip()
-            x = x.split("\n")[0]  # take only the first line if there are multiple
-            return x
-
         df["predicted_description_clean"] = df["predicted_description"].apply(
             rectify_description
         )
@@ -473,3 +472,18 @@ def eval_input(
         predictions_save_path=predictions_save_path,
         override_eval=override_eval,
     )
+
+
+@click.group()
+def main():
+    pass
+
+
+main.add_command(eval_description, name="description")
+main.add_command(eval_code, name="code")
+main.add_command(eval_output, name="output")
+main.add_command(eval_input, name="input")
+
+
+if __name__ == "__main__":
+    main()

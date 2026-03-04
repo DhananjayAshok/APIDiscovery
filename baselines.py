@@ -10,10 +10,11 @@ from utils import (
     call_infer,
     get_zeroshot_starting_details,
     get_prev_results_str,
+    RunTestFunc,
 )
+from eval import rectify_description
 import click
 from load_data import get_dataset
-from eval import RunTestFunc
 import pandas as pd
 from tqdm import tqdm
 
@@ -169,6 +170,15 @@ def run_finetuned(dataset_name, model_name, save_name, override_gen):
             parameters=parameters,
             ignore_checkpoint=override_gen,
         )
+        if os.path.exists(output_file):
+            df = pd.read_json(output_file, lines=True)
+            df["predicted_description_clean"] = df["predicted_description"].apply(rectify_description)
+            df.to_json(output_file, orient="records", lines=True)
+            log_info(f"Saved predictions to {output_file}")
+        else:
+            log_warn(
+                f"Output file {output_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
+            )
         return
 
 
@@ -231,6 +241,7 @@ def run_zeroshot(dataset_name, model_name, save_name, override_gen):
                 ]
             )
         df = pd.DataFrame(data=data, columns=columns)
+        df["predicted_description_clean"] = df["predicted_description"].apply(rectify_description)
         for column in df:
             dataset[column] = df[column]
         dataset.to_json(save_path, orient="records", lines=True)
