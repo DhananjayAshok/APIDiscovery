@@ -144,6 +144,7 @@ class RunTestFunc:
 class LLMJudgeEnvConfig:
     model: str = "gpt-4o-mini"
     base_url = "http://localhost:8000/v1/" # use "http://localhost:8000/v1" for vLLM servers, None for OpenAI API
+    unsupervised = False
 
 
 class FunctionDiscoveryEnv(BaseTextEnv):
@@ -234,6 +235,26 @@ class FunctionDiscoveryEnv(BaseTextEnv):
     Explanation: 
     """
 
+    judge_code_generation_prompt = f"""
+    You are given a function with the following header:
+    [HEADER]
+    The function accepts arguments and produces outputs, examples of which are as follows:
+    [EXAMPLES]
+    You are told the following is the functionality of the code:
+    [FUNCTIONALITY]
+    Given this, write a full python implementation of the function. Your implementation should be consistent with the provided examples and functionality description. Ensure your code is efficient and concise.
+    Respond in the following format:
+    Reasoning: <your concise reasoning here of how you will write the function, no more than a sentence>
+    Code:
+    ```python
+    # your code implementation here
+    ``` [STOP]
+    Remember to follow the format strictly. Now provide your reasoning and code implementation below. Be concise in your reasoning, no more than a sentence, and ensure your code is correct and efficient.
+    Reasoning: 
+    """
+
+
+
     def length_penalty(self, response, threshold, penalty_rate, worst_threshold_multiplier=3):
         # penalize length over threshold at a rate of penalty_rate per token
         num_tokens = len(response.split())
@@ -276,6 +297,9 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                 "[HEADER]", self.func_header
             )
             self.reflection_prompt_filled = self.reflection_prompt.replace(
+                "[HEADER]", self.func_header
+            )
+            self.judge_code_generation_prompt = self.judge_code_generation_prompt.replace(
                 "[HEADER]", self.func_header
             )
             self.prev_results = []
@@ -336,8 +360,16 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             results_str += f"  Input: {inp} => Output: {out}, Error: {err}\n"
         results_str += "]"
         return results_str
-
-    def get_hypothesis_reward(self, done: bool):
+    
+    def get_judge_prev_results_str(self):
+        results_str = "```\n"
+        for inp, out, err in self.prev_results:
+            results_str += f">>> test_func{inp}\n"
+            results_str += f"{out}"
+        results_str += "\n```"
+        return results_str
+    
+    def supervised_hypothesis_reward(self):
         hypothesis_prompt_filled = self.judge_hypothesis_prompt.replace(
             "[FUNCTION]",
             self.test_func_validated).replace(
@@ -353,7 +385,59 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         if rating_match:
             rating = int(rating_match.group(1))
             hypothesis_score = rating / 9.0  # normalize to [0, 1]
+            return hypothesis_score
         else:
+            return None
+        
+    def judge_code_generation(self):
+        examples_str = self.get_judge_prev_results_str()
+        code_generation_prompt_filled = self.judge_code_generation_prompt.replace(
+            "[HEADER]", self.func_header).replace(
+            "[EXAMPLES]", examples_str).replace(
+            "[FUNCTIONALITY]", self.description)
+        evaluation = self.judge_infer(code_generation_prompt_filled)
+        if "```python" in evaluation:
+            code = evaluation.split("```python")[1].split("```")[0].strip()
+            return code
+        else:
+            return None
+
+    def judge_code_evaluation(self, generated_code):
+        try:
+            test_runner = RunTestFunc(generated_code)
+        except:
+            return None
+        exact_matches = []
+        for inp, out, err in self.prev_results:
+            gen_out, gen_err = test_runner.run_test_str(inp)
+            if gen_err is not None and err is not None:
+                exact_matches.append(1)
+            elif gen_err is None and err is None:
+                if gen_out == out:
+                    exact_matches.append(1)
+                else:
+                    exact_matches.append(0)
+            else:
+                exact_matches.append(0)
+        if len(exact_matches) == 0:
+            return None
+        code_score = sum(exact_matches) / len(exact_matches)
+        return code_score
+        
+        
+    def unsupervised_hypothesis_reward(self):
+        generated_code = self.judge_code_generation()
+        if generated_code is None:
+            return None
+        code_score = self.judge_code_evaluation(generated_code)
+        return code_score
+
+    def get_hypothesis_reward(self, done: bool):
+        if LLMJudgeEnvConfig.unsupervised:
+            hypothesis_score = self.unsupervised_hypothesis_reward()
+        else:
+            hypothesis_score = self.supervised_hypothesis_reward()
+        if hypothesis_score is None:
             return 0.0
         termination_score = 0
         if done:
