@@ -287,6 +287,8 @@ def score_output_prediction(predictions_save_path, override_eval=False):
             match = evaluate_output_prediction(
                 true_output=true_out, predicted_output=predicted_output
             )
+            if match is None:
+                match = False
             matches.append(match)
         df.at[idx, "output_prediction_correct_micro"] = (
             sum(matches) / len(matches) if len(matches) > 0 else 0.0
@@ -319,6 +321,8 @@ def score_input_prediction(predictions_save_path, override_eval=False):
             match, pred_out = evaluate_input_prediction(
                 true_code=true_code, target_output=target_out, predicted_input=pred_inp
             )
+            if match is None:
+                match = False
             matches.append(match)
         df.at[idx, "input_prediction_exact_match_micro"] = (
             sum(matches) / len(matches) if len(matches) > 0 else 0.0
