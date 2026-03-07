@@ -12,7 +12,7 @@ from utils import (
     get_prev_results_str,
     RunTestFunc,
 )
-from eval import rectify_description
+from eval import rectify_description, get_output_save_name, get_code_save_name, get_input_save_name
 import click
 from load_data import get_dataset
 import pandas as pd
@@ -371,14 +371,6 @@ def get_all_examples_str(row):
     examples_str = "\n".join(examples)
     return examples_str
 
-def get_code_save_name(save_name):
-    parameters = load_parameters()
-    code_generation_model = parameters["code_generation_model_name"]
-    code_save_name = code_generation_model.split("/")[-1].strip()
-    if code_generation_model == "self":
-        code_save_name = "self"
-    save_name = f"{save_name}_code_prediction_judge-{code_save_name}"
-    return save_name
 
 def get_code_model(model_name):
     parameters = load_parameters()
@@ -582,14 +574,6 @@ def run_eval_output(
     return original_df
 
 
-def get_output_save_name(save_name):
-    parameters = load_parameters()
-    input_output_model = parameters["input_output_prediction_model_name"]
-    code_save_name = input_output_model.split("/")[-1].strip()
-    if input_output_model == "self":
-        code_save_name = "self"
-    save_name = f"{save_name}_output_prediction_judge-{code_save_name}"
-    return save_name
 
 def get_output_model(model_name):
     parameters = load_parameters()
@@ -741,15 +725,6 @@ def run_eval_input(
     )
     return original_df
 
-
-def get_input_save_name(save_name):
-    parameters = load_parameters()
-    input_output_model = parameters["input_output_prediction_model_name"]
-    code_save_name = input_output_model.split("/")[-1].strip()
-    if input_output_model == "self":
-        code_save_name = "self"
-    save_name = f"{save_name}_input_prediction_judge-{code_save_name}"
-    return save_name
 
 def get_input_model(model_name):
     parameters = load_parameters()

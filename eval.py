@@ -12,7 +12,6 @@ import click
 import os
 import subprocess
 import re
-from baselines import get_output_save_name, get_code_save_name, get_input_save_name
 
 
 eval_prompt = f"""
@@ -365,6 +364,35 @@ def eval_description(
         dataset_name=dataset_name,
         override_eval=override_eval,
     )
+
+
+def get_output_save_name(save_name):
+    parameters = load_parameters()
+    input_output_model = parameters["input_output_prediction_model_name"]
+    code_save_name = input_output_model.split("/")[-1].strip()
+    if input_output_model == "self":
+        code_save_name = "self"
+    save_name = f"{save_name}_output_prediction_judge-{code_save_name}"
+    return save_name
+
+def get_input_save_name(save_name):
+    parameters = load_parameters()
+    input_output_model = parameters["input_output_prediction_model_name"]
+    code_save_name = input_output_model.split("/")[-1].strip()
+    if input_output_model == "self":
+        code_save_name = "self"
+    save_name = f"{save_name}_input_prediction_judge-{code_save_name}"
+    return save_name
+
+def get_code_save_name(save_name):
+    parameters = load_parameters()
+    code_generation_model = parameters["code_generation_model_name"]
+    code_save_name = code_generation_model.split("/")[-1].strip()
+    if code_generation_model == "self":
+        code_save_name = "self"
+    save_name = f"{save_name}_code_prediction_judge-{code_save_name}"
+    return save_name
+
 
 
 @click.command()
