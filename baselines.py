@@ -386,7 +386,7 @@ def do_predict_code(
     if load_name is None:
         load_name = save_name
     prediction_file = get_save_paths(dataset_name, load_name)
-    save_name = get_code_save_name(model_name, save_name)
+    save_name = get_code_save_name(save_name)
     code_generation_model = get_code_model(model_name)
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
@@ -589,7 +589,7 @@ def do_predict_output(
         load_name = save_name
 
     prediction_file = get_save_paths(dataset_name, load_name)
-    save_name = get_output_save_name(model_name, save_name)
+    save_name = get_output_save_name(save_name)
     input_output_model = get_output_model(model_name)
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
@@ -739,7 +739,7 @@ def do_predict_input(
     if load_name is None:
         load_name = save_name
     prediction_file = get_save_paths(dataset_name, load_name)
-    save_name = get_input_save_name(model_name, save_name)
+    save_name = get_input_save_name(save_name)
     input_output_model = get_input_model(model_name)
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
