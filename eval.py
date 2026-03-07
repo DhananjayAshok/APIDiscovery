@@ -12,6 +12,7 @@ import click
 import os
 import subprocess
 import re
+from baselines import get_output_save_name, get_code_save_name, get_input_save_name
 
 
 eval_prompt = f"""
@@ -389,8 +390,9 @@ def eval_code(
     save_name,
     override_eval,
 ):
+    save_name = get_code_save_name(save_name)
     predictions_save_path = os.path.abspath(
-        f"results/{dataset_name}/{save_name}_code_prediction.jsonl"
+        f"results/{dataset_name}/{save_name}.jsonl"
     )
     if not os.path.exists(predictions_save_path):
         log_error(
@@ -425,8 +427,9 @@ def eval_output(
     save_name,
     override_eval,
 ):
+    save_name = get_output_save_name(save_name)
     predictions_save_path = os.path.abspath(
-        f"results/{dataset_name}/{save_name}_output_prediction.jsonl"
+        f"results/{dataset_name}/{save_name}.jsonl"
     )
     if not os.path.exists(predictions_save_path):
         log_error(
@@ -461,8 +464,9 @@ def eval_input(
     save_name,
     override_eval,
 ):
+    save_name = get_input_save_name(save_name)
     predictions_save_path = os.path.abspath(
-        f"results/{dataset_name}/{save_name}_input_prediction.jsonl"
+        f"results/{dataset_name}/{save_name}.jsonl"
     )
     if not os.path.exists(predictions_save_path):
         log_error(
