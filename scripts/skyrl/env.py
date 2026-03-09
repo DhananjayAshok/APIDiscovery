@@ -144,7 +144,7 @@ class RunTestFunc:
 class LLMJudgeEnvConfig:
     model: str = "gpt-4o-mini"
     base_url = "http://localhost:8000/v1/" # use "http://localhost:8000/v1" for vLLM servers, None for OpenAI API
-    unsupervised = False
+    unsupervised = True
 
 
 class FunctionDiscoveryEnv(BaseTextEnv):
