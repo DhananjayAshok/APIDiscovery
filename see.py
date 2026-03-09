@@ -239,6 +239,8 @@ class Stats:
         # 4. Average score and number of queries grouped by conclusion status (concluded vs not concluded)
         # 5. correlation between score, concluded, n_queries, and description length
         # 6. Score distribution
+        # fill nans with 1 for score
+        df["score"] = df["score"].fillna(1)
         avg_score = df["score"].mean()
         std_score = df["score"].std()
         avg_queries = df["n_queries"].mean()
@@ -330,6 +332,8 @@ class Stats:
         columns = [column]
         if not Stats.require_columns(df, columns):
             return
+        # fill nans with 0 for exact match columns
+        df[column] = df[column].fillna(0)
         # print the following statistics:
         # 1. Average exact match score ± standard deviation
         # 2. Exact match score distribution
@@ -340,6 +344,11 @@ class Stats:
         std_exact_match = df[column].std()
         percentage_exact_match_1 = (df[column] == 1).mean() * 100
         percentage_exact_match_05_or_greater = (df[column] >= 0.5).mean() * 100
+        percentage_exact_match_0_to_20 = ((df[column] >= 0) & (df[column] < 0.2)).mean() * 100
+        percentage_exact_match_20_to_40 = ((df[column] >= 0.2) & (df[column] < 0.4)).mean() * 100
+        percentage_exact_match_40_to_60 = ((df[column] >= 0.4) & (df[column] < 0.6)).mean() * 100
+        percentage_exact_match_60_to_80 = ((df[column] >= 0.6) & (df[column] < 0.8)).mean() * 100
+        percentage_exact_match_80_to_100 = ((df[column] >= 0.8) & (df[column] <= 1)).mean() * 100
         percentage_exact_match_0 = (df[column] == 0).mean() * 100
         log_info(
             f"Average Exact Match Score: {avg_exact_match:.2f} ± {std_exact_match:.2f}"
@@ -361,6 +370,11 @@ class Stats:
             "percentage_exact_match_1": percentage_exact_match_1,
             "percentage_exact_match_05_or_greater": percentage_exact_match_05_or_greater,
             "percentage_exact_match_0": percentage_exact_match_0,
+            "percentage_exact_match_0_to_20": percentage_exact_match_0_to_20,
+            "percentage_exact_match_20_to_40": percentage_exact_match_20_to_40,
+            "percentage_exact_match_40_to_60": percentage_exact_match_40_to_60,
+            "percentage_exact_match_60_to_80": percentage_exact_match_60_to_80,
+            "percentage_exact_match_80_to_100": percentage_exact_match_80_to_100,
             "all_exact_matches": df[column].tolist(),
         }
 
