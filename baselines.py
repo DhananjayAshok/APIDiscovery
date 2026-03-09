@@ -12,7 +12,7 @@ from utils import (
     get_prev_results_str,
     RunTestFunc,
 )
-from eval import rectify_description
+from eval import rectify_description, get_output_save_name, get_code_save_name, get_input_save_name
 import click
 from load_data import get_dataset
 import pandas as pd
@@ -372,19 +372,22 @@ def get_all_examples_str(row):
     return examples_str
 
 
+def get_code_model(model_name):
+    parameters = load_parameters()
+    code_generation_model = parameters["code_generation_model_name"]
+    if code_generation_model == "self":
+        code_generation_model = model_name
+    return code_generation_model
+
+
 def do_predict_code(
     model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None
 ):
     if load_name is None:
         load_name = save_name
     prediction_file = get_save_paths(dataset_name, load_name)
-    parameters = load_parameters()
-    code_generation_model = parameters["code_generation_model_name"]
-    code_save_name = code_generation_model.split("/")[-1].strip()
-    if code_generation_model == "self":
-        code_generation_model = model_name
-        code_save_name = "self"
-    save_name = f"{save_name}_code_prediction_judge-{code_save_name}"
+    save_name = get_code_save_name(save_name)
+    code_generation_model = get_code_model(model_name)
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
@@ -571,6 +574,14 @@ def run_eval_output(
     return original_df
 
 
+
+def get_output_model(model_name):
+    parameters = load_parameters()
+    input_output_model = parameters["input_output_prediction_model_name"]
+    if input_output_model == "self":
+        input_output_model = model_name
+    return input_output_model
+
 def do_predict_output(
     model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None
 ):
@@ -578,13 +589,8 @@ def do_predict_output(
         load_name = save_name
 
     prediction_file = get_save_paths(dataset_name, load_name)
-    parameters = load_parameters()
-    input_output_model = parameters["input_output_prediction_model_name"]
-    code_save_name = input_output_model.split("/")[-1].strip()
-    if input_output_model == "self":
-        input_output_model = model_name
-        code_save_name = "self"
-    save_name = f"{save_name}_output_prediction_judge-{code_save_name}"
+    save_name = get_output_save_name(save_name)
+    input_output_model = get_output_model(model_name)
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
@@ -627,7 +633,7 @@ def do_predict_output(
         axis=1,
     )
     run_eval_output(
-        model_name=model_name,
+        model_name=input_output_model,
         dataset_name=dataset_name,
         save_name=save_name,
         override_gen=override_gen,
@@ -720,19 +726,21 @@ def run_eval_input(
     return original_df
 
 
+def get_input_model(model_name):
+    parameters = load_parameters()
+    input_output_model = parameters["input_output_prediction_model_name"]
+    if input_output_model == "self":
+        input_output_model = model_name
+    return input_output_model
+
 def do_predict_input(
     model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None
 ):
     if load_name is None:
         load_name = save_name
     prediction_file = get_save_paths(dataset_name, load_name)
-    parameters = load_parameters()
-    input_output_model = parameters["input_output_prediction_model_name"]
-    code_save_name = input_output_model.split("/")[-1].strip()
-    if input_output_model == "self":
-        input_output_model = model_name
-        code_save_name = "self"
-    save_name = f"{save_name}_input_prediction_judge-{code_save_name}"
+    save_name = get_input_save_name(save_name)
+    input_output_model = get_input_model(model_name)
     output_file = get_save_paths(dataset_name, save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
@@ -797,7 +805,7 @@ def do_predict_input(
         axis=1,
     )
     run_eval_input(
-        model_name=model_name,
+        model_name=input_output_model,
         dataset_name=dataset_name,
         save_name=save_name,
         override_gen=override_gen,

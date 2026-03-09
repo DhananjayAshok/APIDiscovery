@@ -287,6 +287,8 @@ def score_output_prediction(predictions_save_path, override_eval=False):
             match = evaluate_output_prediction(
                 true_output=true_out, predicted_output=predicted_output
             )
+            if match is None:
+                match = False
             matches.append(match)
         df.at[idx, "output_prediction_correct_micro"] = (
             sum(matches) / len(matches) if len(matches) > 0 else 0.0
@@ -319,6 +321,8 @@ def score_input_prediction(predictions_save_path, override_eval=False):
             match, pred_out = evaluate_input_prediction(
                 true_code=true_code, target_output=target_out, predicted_input=pred_inp
             )
+            if match is None:
+                match = False
             matches.append(match)
         df.at[idx, "input_prediction_exact_match_micro"] = (
             sum(matches) / len(matches) if len(matches) > 0 else 0.0
@@ -366,6 +370,35 @@ def eval_description(
     )
 
 
+def get_output_save_name(save_name):
+    parameters = load_parameters()
+    input_output_model = parameters["input_output_prediction_model_name"]
+    code_save_name = input_output_model.split("/")[-1].strip()
+    if input_output_model == "self":
+        code_save_name = "self"
+    save_name = f"{save_name}_output_prediction_judge-{code_save_name}"
+    return save_name
+
+def get_input_save_name(save_name):
+    parameters = load_parameters()
+    input_output_model = parameters["input_output_prediction_model_name"]
+    code_save_name = input_output_model.split("/")[-1].strip()
+    if input_output_model == "self":
+        code_save_name = "self"
+    save_name = f"{save_name}_input_prediction_judge-{code_save_name}"
+    return save_name
+
+def get_code_save_name(save_name):
+    parameters = load_parameters()
+    code_generation_model = parameters["code_generation_model_name"]
+    code_save_name = code_generation_model.split("/")[-1].strip()
+    if code_generation_model == "self":
+        code_save_name = "self"
+    save_name = f"{save_name}_code_prediction_judge-{code_save_name}"
+    return save_name
+
+
+
 @click.command()
 @click.option(
     "--dataset_name",
@@ -389,8 +422,9 @@ def eval_code(
     save_name,
     override_eval,
 ):
+    save_name = get_code_save_name(save_name)
     predictions_save_path = os.path.abspath(
-        f"results/{dataset_name}/{save_name}_code_prediction.jsonl"
+        f"results/{dataset_name}/{save_name}.jsonl"
     )
     if not os.path.exists(predictions_save_path):
         log_error(
@@ -425,8 +459,9 @@ def eval_output(
     save_name,
     override_eval,
 ):
+    save_name = get_output_save_name(save_name)
     predictions_save_path = os.path.abspath(
-        f"results/{dataset_name}/{save_name}_output_prediction.jsonl"
+        f"results/{dataset_name}/{save_name}.jsonl"
     )
     if not os.path.exists(predictions_save_path):
         log_error(
@@ -461,8 +496,9 @@ def eval_input(
     save_name,
     override_eval,
 ):
+    save_name = get_input_save_name(save_name)
     predictions_save_path = os.path.abspath(
-        f"results/{dataset_name}/{save_name}_input_prediction.jsonl"
+        f"results/{dataset_name}/{save_name}.jsonl"
     )
     if not os.path.exists(predictions_save_path):
         log_error(

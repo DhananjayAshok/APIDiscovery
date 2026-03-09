@@ -164,8 +164,7 @@ def get_prev_results_str(prev_results, max_previous_results):
         if max_previous_results is not None
         else prev_results
     )
-    for inp, out_err in to_slice:
-        out, err = out_err
+    for inp, out, err in to_slice:
         results_str += f"  Input: {inp} => Output: {out}, Error: {err}\n"
     results_str += "]"
     return results_str

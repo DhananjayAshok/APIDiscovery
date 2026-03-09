@@ -62,7 +62,7 @@ def paired_bootstrap(
         return
     ids = list(range(n))
 
-    for _ in tqdm(range(num_samples), desc=progress_title):
+    for _ in range(num_samples):
         # Subsample the gold and system outputs
         reduced_ids = np.random.choice(ids, int(len(ids) * sample_ratio), replace=True)
         reduced_sys1 = [sys1[i] for i in reduced_ids]
@@ -148,6 +148,7 @@ def comparisons(df, metric_col, col="Method"):
 def do_test(df, metric_col, dataset, save_name):
     columns = ["Method 1", "Model 1", "Method 2", "Model 2", "p-value"]
     data = []
+    log_info(f"Performing statistical tests for dataset {dataset} and metric {metric_col}")
     for val1, sys1, val2, sys2 in comparisons(df, metric_col):
         p_val = paired_bootstrap(
             sys1,
@@ -238,6 +239,8 @@ class Stats:
         # 4. Average score and number of queries grouped by conclusion status (concluded vs not concluded)
         # 5. correlation between score, concluded, n_queries, and description length
         # 6. Score distribution
+        # fill nans with 1 for score
+        df["score"] = df["score"].fillna(1)
         avg_score = df["score"].mean()
         std_score = df["score"].std()
         avg_queries = df["n_queries"].mean()
@@ -329,6 +332,8 @@ class Stats:
         columns = [column]
         if not Stats.require_columns(df, columns):
             return
+        # fill nans with 0 for exact match columns
+        df[column] = df[column].fillna(0)
         # print the following statistics:
         # 1. Average exact match score ± standard deviation
         # 2. Exact match score distribution
@@ -339,6 +344,11 @@ class Stats:
         std_exact_match = df[column].std()
         percentage_exact_match_1 = (df[column] == 1).mean() * 100
         percentage_exact_match_05_or_greater = (df[column] >= 0.5).mean() * 100
+        percentage_exact_match_0_to_20 = ((df[column] >= 0) & (df[column] < 0.2)).mean() * 100
+        percentage_exact_match_20_to_40 = ((df[column] >= 0.2) & (df[column] < 0.4)).mean() * 100
+        percentage_exact_match_40_to_60 = ((df[column] >= 0.4) & (df[column] < 0.6)).mean() * 100
+        percentage_exact_match_60_to_80 = ((df[column] >= 0.6) & (df[column] < 0.8)).mean() * 100
+        percentage_exact_match_80_to_100 = ((df[column] >= 0.8) & (df[column] <= 1)).mean() * 100
         percentage_exact_match_0 = (df[column] == 0).mean() * 100
         log_info(
             f"Average Exact Match Score: {avg_exact_match:.2f} ± {std_exact_match:.2f}"
@@ -360,6 +370,11 @@ class Stats:
             "percentage_exact_match_1": percentage_exact_match_1,
             "percentage_exact_match_05_or_greater": percentage_exact_match_05_or_greater,
             "percentage_exact_match_0": percentage_exact_match_0,
+            "percentage_exact_match_0_to_20": percentage_exact_match_0_to_20,
+            "percentage_exact_match_20_to_40": percentage_exact_match_20_to_40,
+            "percentage_exact_match_40_to_60": percentage_exact_match_40_to_60,
+            "percentage_exact_match_60_to_80": percentage_exact_match_60_to_80,
+            "percentage_exact_match_80_to_100": percentage_exact_match_80_to_100,
             "all_exact_matches": df[column].tolist(),
         }
 
@@ -380,7 +395,7 @@ def is_valid_file(path):
     input_output_judge_model = parameters["input_output_prediction_model_name"].split(
         "/"
     )[-1]
-    if f"description_judge-{description_judge_model}.jsonl" in path:
+    if f"description_prediction_judge-{description_judge_model}.jsonl" in path:
         return "description"
     if f"code_prediction_judge-{code_judge_model}.jsonl" in path:
         return "code"
