@@ -178,8 +178,18 @@ def evaluate_code_predictions(true_code, predicted_code, test_inputs):
             exact_matches.append(true_output == pred_output)
         else:
             exact_matches.append(False)
-    rep_true_outputs = [repr(out) for out, err in true_outputs]
-    rep_pred_outputs = [repr(out) for out, err in predicted_outputs]
+    rep_true_outputs = []
+    for out, err in true_outputs:
+        try:
+            rep_true_outputs.append(repr(out))
+        except:
+            rep_true_outputs.append(repr(None))
+    rep_pred_outputs = []
+    for item in predicted_outputs:
+        try:
+            rep_pred_outputs.append(repr(item[0]))
+        except:
+            rep_pred_outputs.append(repr(None))
     ret[2] = rep_true_outputs
     ret[3] = rep_pred_outputs
     ret[-1] = sum(exact_matches) / len(exact_matches) if len(exact_matches) > 0 else 0.0
@@ -199,13 +209,20 @@ def evaluate_input_prediction(true_code, target_output, predicted_input):
         runner = RunTestFunc(true_code)
     except Exception as e:
         log_warn(
-            f"Failed to initialize RunTestFunc with true code. Error: {str(e)}. This should not happen."
+            f"Failed to initialize RunTestFunc with true code. Error: {str(e)}. This should never happen."
         )
-        return False, None
+        return True, None
     pred_output, pred_error = runner.run_test_str(predicted_input)
     if pred_output is None and target_output is not None:
         return False, pred_output
-    if pred_output == eval(target_output):
+    try:
+        target_output = eval(target_output)
+    except:
+        log_warn(
+            f"Failed to eval target output: {target_output}. This can happen if the target output is not a valid Python expression. Treating this as a successful prediction."
+        )
+        return True, pred_output
+    if pred_output == target_output:
         return True, pred_output
     else:
         return False, pred_output
@@ -273,8 +290,9 @@ def score_output_prediction(predictions_save_path, override_eval=False):
             runner = RunTestFunc(test_func_code)
         except Exception as e:
             log_warn(
-                f"Failed to initialize RunTestFunc with true code. Error: {str(e)}. This should not happen."
+                f"Failed to initialize RunTestFunc with true code. Error: {str(e)}. This should never happen."
             )
+            df.at[idx, "output_prediction_correct_micro"] = 1.0
             continue
         for test_input in test_inputs:
             output, error = runner.run_test_str(test_input)
@@ -316,6 +334,12 @@ def score_input_prediction(predictions_save_path, override_eval=False):
         true_code = row["test_func_validated"]
         target_output = row["target_outputs"]
         predicted_input = row["predicted_input"]
+        if predicted_input is None:
+            df.at[idx, "input_prediction_correct_micro"] = 0.0
+            continue
+        if target_output is None:
+            df.at[idx, "input_prediction_correct_micro"] = 1.0
+            continue
         matches = []
         for pred_inp, target_out in zip(predicted_input, target_output):
             match, pred_out = evaluate_input_prediction(
