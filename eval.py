@@ -12,6 +12,7 @@ import click
 import os
 import subprocess
 import re
+from ast import literal_eval
 
 
 eval_prompt = f"""
@@ -198,10 +199,10 @@ def evaluate_code_predictions(true_code, predicted_code, test_inputs):
 
 def evaluate_output_prediction(true_output, predicted_output):
     try:
-        eval(predicted_output)
+        literal_eval(predicted_output)
     except:
         return None
-    return true_output == eval(predicted_output)
+    return true_output == literal_eval(predicted_output)
 
 
 def evaluate_input_prediction(true_code, target_output, predicted_input):

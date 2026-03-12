@@ -11,12 +11,6 @@ from dataclasses import dataclass
 import numpy as np
 from loguru import logger
 import sys
-#logger.remove()  # Remove default handler
-#logger.add(
-#    sys.stderr,
-#    level="INFO",  # Change to DEBUG for more verbose output
-#    format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}:{function}:{line}</cyan> - <level>{message}</level>"
-#)
 
 
 
