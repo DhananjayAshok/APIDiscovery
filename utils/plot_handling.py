@@ -130,6 +130,7 @@ class Plotter:
             if not os.path.exists(figure_dir):
                 os.makedirs(figure_dir)
             plt.savefig(f"{figure_path}.pdf")
+            plt.savefig(f"{figure_path}.png")
             log_info(f"Saved figure to {figure_path}.pdf", parameters=self.parameters)
             if not self.parameters["figure_skip_show"]:
                 plt.show()
