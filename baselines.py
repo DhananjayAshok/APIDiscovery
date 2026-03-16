@@ -88,11 +88,14 @@ Hypothesis Conclusion: """
         suggested_inputs = None
         options = response.strip().split("\n")
         for opt in options:
-            if opt.count("Input:") == 1:
-                opt = opt.split("Input:")[1].strip()
-            if opt.strip() != "":
-                suggested_inputs = opt
-                break
+            if opt.count("input:") == 1 or opt.count("Input:") == 1:
+                if opt.count("input:") == 1:
+                    opt = opt.split("input:")[1].strip()
+                else:
+                    opt = opt.split("Input:")[1].strip()
+                if opt.strip() != "":
+                    suggested_inputs = opt
+                    break
         if suggested_inputs is None:  # then empty string
             last_input_str = "You did not suggest any inputs. Do not do that again."
         # print(f"Suggested inputs: {suggested_inputs}")

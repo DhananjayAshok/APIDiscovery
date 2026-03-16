@@ -137,8 +137,8 @@ class RunTestFunc:
 @dataclass
 class LLMJudgeEnvConfig:
     model: str = "gpt-4o-mini"
-    base_url = "http://localhost:8000/v1/" # use "http://localhost:8000/v1" for vLLM servers, None for OpenAI API
-    unsupervised = True
+    base_url = None #"http://localhost:8000/v1/" # use "http://localhost:8000/v1" for vLLM servers, None for OpenAI API
+    unsupervised = False
 
 
 class FunctionDiscoveryEnv(BaseTextEnv):
@@ -543,8 +543,11 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             suggested_inputs = None
             options = action.strip().split("\n")
             for opt in options:
-                if opt.lower().count("input:") == 1:
-                    opt = opt.split("Input:")[1].strip()
+                if opt.count("input:") == 1 or opt.count("Input:") == 1:
+                    if opt.count("input:") == 1:
+                        opt = opt.split("input:")[1].strip()
+                    else:
+                        opt = opt.split("Input:")[1].strip()
                     if opt.strip() != "":
                         suggested_inputs = opt
                         break
