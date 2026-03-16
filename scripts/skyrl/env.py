@@ -528,7 +528,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                 .replace("[HYPOTHESIS]", self.current_hypothesis)
                 .replace(
                     "[REASONING]", action
-                )  # TODO: check that this is reasoning output.
+                )
             )
             new_obs = {"role": "user", "content": prompt}
             reward = self.get_reasoning_reward(action) + self.length_penalty(action, threshold=100, penalty_rate=0.05)
@@ -543,11 +543,10 @@ class FunctionDiscoveryEnv(BaseTextEnv):
             suggested_inputs = None
             options = action.strip().split("\n")
             for opt in options:
-                opt = opt.replace("Input:", "").strip()
-                if "-" in opt and "(" in opt and ")" in opt:  # crude check for valid input format
-                    opt = opt[opt.index("(") : opt.rindex(")") + 1]
+                if opt.lower().count("input:") == 1:
+                    opt = opt.split("Input:")[1].strip()
                     if opt.strip() != "":
-                        suggested_inputs = "(" + opt + ",)" # ensure it's a tuple, even if single input
+                        suggested_inputs = opt
                         break
             if suggested_inputs is None:  # then empty string
                 suggested_inputs = "INVALID INPUT"
