@@ -5,6 +5,7 @@ from utils import (
     file_makedir,
     log_error,
     RunTestFunc,
+    get_lm,
 )
 from tqdm import tqdm
 import pandas as pd
@@ -47,18 +48,7 @@ def parse_score(output):
         return None
 
 
-def parse_eval(evaluation_path):
-    try:
-        df = pd.read_json(evaluation_path, lines=True)
-    except:
-        log_warn(
-            f"Output file {evaluation_path} not found after inference command. This can happen for openai inference. Run the script again when the batch is done. "
-        )
-        return
-    if isinstance(df["score_output"][0], list):
-        df["score_output"] = df["score_output"].apply(
-            lambda x: x[0] if len(x) > 0 else ""
-        )
+def parse_eval(df):
     df["score"] = df["score_output"].apply(parse_score)
     nan_frac = df["score"].isna().mean()
     if nan_frac > 0:
@@ -69,17 +59,7 @@ def parse_eval(evaluation_path):
         df["n_queries"] = 0
     if "concluded" not in df.columns:
         df["concluded"] = False
-    df.to_json(evaluation_path, orient="records", lines=True)
-    if df is not None:
-        avg_n_queries = df["n_queries"].mean()
-        avg_score = df["score"].mean()
-        perc_concluded = df["concluded"].mean()
-        log_info(
-            f"n_queries: {avg_n_queries}, concluded: {round(perc_concluded* 100, 2)}, score: {avg_score}"
-        )
-        log_info(df.groupby("concluded")["score"].mean())
-        log_info(df[["n_queries", "score"]].mean())
-    log_info(f"Saved scored predictions to {evaluation_path}")
+    return df
 
 
 def score_description_predictions(
@@ -92,7 +72,9 @@ def score_description_predictions(
     parameters = load_parameters()
     model = parameters["evaluation_model_name"]
     model_save_name = model.split("/")[-1].strip()
-    save_name = f"{save_name}_{dataset_name}_description_prediction_judge-{model_save_name}"
+    save_name = (
+        f"{save_name}_{dataset_name}_description_prediction_judge-{model_save_name}"
+    )
     evaluation_path = os.path.abspath(f"results/{dataset_name}/" + save_name + ".jsonl")
     skip = False
     if not override_eval:
@@ -101,11 +83,9 @@ def score_description_predictions(
                 f"Scored predictions already exist at {evaluation_path}, skipping judge generation."
             )
             skip = True
+            df = pd.read_json(evaluation_path, lines=True)
     if not skip:
         df = pd.read_json(predictions_save_path, lines=True)
-        df["predicted_description_clean"] = df["predicted_description"].apply(
-            rectify_description
-        )
 
         def get_score_prompt(row):
             description = None
@@ -118,20 +98,32 @@ def score_description_predictions(
                     f"Row with columns: {row.keys()} does not contain a description column."
                 )
             prompt_filled = eval_prompt.replace("[TRUE]", description).replace(
-                "[HYPOTHESIS]", row["predicted_description_clean"]
+                "[HYPOTHESIS]", row["predicted_description"]
             )
             return prompt_filled
 
         df["score_prompt"] = df.apply(get_score_prompt, axis=1)
-        df.to_json(predictions_save_path, orient="records", lines=True)
-        open_ai_batch_name = ""
-        if "gpt" in model:
-            open_ai_batch_name = f"{save_name}"
-        openaibatch_str = "-n " + open_ai_batch_name if open_ai_batch_name != "" else ""
-        command_string = f"bash scripts/infer.sh -i {predictions_save_path} -o {evaluation_path} -m {model} -c score_prompt -d score_output -t 300 -g judge {openaibatch_str} -r yes"
-        log_info(f"Generating scores with command: {command_string}")
-        subprocess.run(command_string, shell=True, check=True)
-    parse_eval(evaluation_path)
+        model_name = parameters["evaluation_model_name"]
+        model = get_lm(model_name)
+        df["score_output"] = None
+        for idx, row in tqdm(
+            df.iterrows(), total=len(df), desc="Generating evaluation scores"
+        ):
+            prompt = row["score_prompt"]
+            output = model.generate(prompt)
+            df.at[idx, "score_output"] = output
+    df = parse_eval(df)
+    df.to_json(evaluation_path, orient="records", lines=True)
+    if df is not None:
+        avg_n_queries = df["n_queries"].mean()
+        avg_score = df["score"].mean()
+        perc_concluded = df["concluded"].mean()
+        log_info(
+            f"n_queries: {avg_n_queries}, concluded: {round(perc_concluded* 100, 2)}, score: {avg_score}"
+        )
+        log_info(df.groupby("concluded")["score"].mean())
+        log_info(df[["n_queries", "score"]].mean())
+    log_info(f"Saved scored predictions to {evaluation_path}")
 
 
 def evaluate_code_predictions(true_code, predicted_code, test_inputs):
@@ -224,26 +216,17 @@ def evaluate_input_prediction(true_code, target_output, predicted_input):
 
 def score_code(predictions_save_path, override_eval=False):
     df = pd.read_json(predictions_save_path, lines=True)
-
-    def rectify_code(x):
-        if isinstance(x, list):
-            x = x[0] if len(x) > 0 else ""
-        if isinstance(x, str):
-            x = x.strip()
-        return x
-
     if "predicted_code" not in df.columns:
         log_error(f"predicted_code not in df with columns: {df.columns}")
-    if "predicted_code_clean" in df.columns and not override_eval:
-        log_info("predicted_code_clean column already exists, skipping code scoring.")
+    if "true_test_outputs" in df.columns and not override_eval:
+        log_info("true_test_outputs column already exists, skipping code scoring.")
         return
-    df["predicted_code_clean"] = df["predicted_code"].apply(rectify_code)
     df["true_test_outputs"] = None
     df["predicted_test_outputs"] = None
     df["predicted_outputs_exact_match"] = None
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="Scoring code predictions"):
         true_code = row["test_func_validated"]
-        predicted_code = row["predicted_code_clean"]
+        predicted_code = row["predicted_code"]
         test_inputs = row["test_inputs"]
         (
             can_exec_true_code,
@@ -397,6 +380,7 @@ def get_output_save_name(save_name):
     save_name = f"{save_name}_output_prediction_judge-{code_save_name}"
     return save_name
 
+
 def get_input_save_name(save_name):
     parameters = load_parameters()
     input_output_model = parameters["input_output_prediction_model_name"]
@@ -406,6 +390,7 @@ def get_input_save_name(save_name):
     save_name = f"{save_name}_input_prediction_judge-{code_save_name}"
     return save_name
 
+
 def get_code_save_name(save_name):
     parameters = load_parameters()
     code_generation_model = parameters["code_generation_model_name"]
@@ -414,7 +399,6 @@ def get_code_save_name(save_name):
         code_save_name = "self"
     save_name = f"{save_name}_code_prediction_judge-{code_save_name}"
     return save_name
-
 
 
 @click.command()
@@ -441,9 +425,7 @@ def eval_code(
     override_eval,
 ):
     save_name = get_code_save_name(save_name)
-    predictions_save_path = os.path.abspath(
-        f"results/{dataset_name}/{save_name}.jsonl"
-    )
+    predictions_save_path = os.path.abspath(f"results/{dataset_name}/{save_name}.jsonl")
     if not os.path.exists(predictions_save_path):
         log_error(
             f"Predictions file not found at {predictions_save_path}. Run the generation script first."
@@ -478,9 +460,7 @@ def eval_output(
     override_eval,
 ):
     save_name = get_output_save_name(save_name)
-    predictions_save_path = os.path.abspath(
-        f"results/{dataset_name}/{save_name}.jsonl"
-    )
+    predictions_save_path = os.path.abspath(f"results/{dataset_name}/{save_name}.jsonl")
     if not os.path.exists(predictions_save_path):
         log_error(
             f"Predictions file not found at {predictions_save_path}. Run the generation script first."
@@ -515,9 +495,7 @@ def eval_input(
     override_eval,
 ):
     save_name = get_input_save_name(save_name)
-    predictions_save_path = os.path.abspath(
-        f"results/{dataset_name}/{save_name}.jsonl"
-    )
+    predictions_save_path = os.path.abspath(f"results/{dataset_name}/{save_name}.jsonl")
     if not os.path.exists(predictions_save_path):
         log_error(
             f"Predictions file not found at {predictions_save_path}. Run the generation script first."

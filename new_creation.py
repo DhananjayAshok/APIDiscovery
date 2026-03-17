@@ -125,15 +125,17 @@ Function:
 
 """
 
+
 def drop_docstrings(func_code):
     """Will mess up if there are triple quotes in the code that are not docstrings, but this is a simple heuristic to drop docstrings from the function code."""
     while '"""' in func_code:
         first_index = func_code.index('"""')
-        if '"""' not in func_code[first_index + 3:]:
+        if '"""' not in func_code[first_index + 3 :]:
             break
         second_index = func_code.index('"""', first_index + 3)
         func_code = func_code[:first_index] + func_code[second_index + 3 :]
     return func_code
+
 
 def move_imports_top(func_code: str) -> str:
     lines = func_code.split("\n")
@@ -147,6 +149,7 @@ def move_imports_top(func_code: str) -> str:
             other_lines.append(line)
     new_code = "\n".join(import_lines + other_lines)
     return new_code
+
 
 def potentially_unsafe(func_code):
     unsafe_modules = ["os", "sys", "subprocess", "shutil", "socket", "requests"]
@@ -183,7 +186,7 @@ def anonymize_header(func_code: str) -> str:
     preamble = anonymized_name[: header_start + 4]
     header = anonymized_name[header_start + 4 : def_end + 1]
     if "-> " in header:
-        header = header.split("->")[0].strip() + ":"    
+        header = header.split("->")[0].strip() + ":"
     body = anonymized_name[def_end + 1 :]
     indent = None
     for line in body.split("\n"):
@@ -209,9 +212,9 @@ def anonymize_header(func_code: str) -> str:
         header = header.replace(f"({arg_name},", f"(arg{i},")
         header = header.replace(f"({arg_name}:", f"(arg{i}:")
         header = header.replace(f" {arg_name}):", f" arg{i}):")
-        header = header.replace(f",{arg_name}):", f",arg{i}):")        
+        header = header.replace(f",{arg_name}):", f",arg{i}):")
         header = header.replace(f" {arg_name})", f" arg{i})")
-        header = header.replace(f",{arg_name})", f",arg{i})")                
+        header = header.replace(f",{arg_name})", f",arg{i})")
         body = f"    {arg_name} = arg{i}\n" + body
     # strip out any potential type annotations from the header
     if len(args_raw) == 0:
@@ -222,17 +225,27 @@ def anonymize_header(func_code: str) -> str:
         while current_arg_index <= final_arg_index:
             arg_position = header.find(f"arg{current_arg_index}")
             if arg_position == -1:
-                print(f"Could not find argument position for arg{current_arg_index} in header: {header}")
+                print(
+                    f"Could not find argument position for arg{current_arg_index} in header: {header}"
+                )
                 return None
             if current_arg_index == final_arg_index:
                 next_arg_position = header.find("):", arg_position)
                 header = header[:arg_position] + f"arg{current_arg_index}):"
             else:
-                next_arg_position = header.find(f"arg{current_arg_index + 1}", arg_position)
+                next_arg_position = header.find(
+                    f"arg{current_arg_index + 1}", arg_position
+                )
                 if next_arg_position == -1:
-                    print(f"Could not find next argument position for arg{current_arg_index + 1} in header: {header}")
+                    print(
+                        f"Could not find next argument position for arg{current_arg_index + 1} in header: {header}"
+                    )
                     return None
-                header = header[:arg_position] + f"arg{current_arg_index}, " + header[next_arg_position:]                
+                header = (
+                    header[:arg_position]
+                    + f"arg{current_arg_index}, "
+                    + header[next_arg_position:]
+                )
             current_arg_index += 1
     # adding a validate function at the start of the body
     # should be able to exec anonymized code without the validate_input_args call now, do it and if it fails I need to debug:
@@ -247,20 +260,18 @@ def anonymize_header(func_code: str) -> str:
     for i, line in enumerate(body.split("\n")):
         if "return " in line:
             saw_return = True
-        if line == "" and saw_return: 
+        if line == "" and saw_return:
             body = "\n".join(body.split("\n")[:i])
             break
     anonymized_code = preamble + header + "\n" + body
     return anonymized_code
 
 
-
-
-
 class InitialFormatter:
     """
     Returns a jsonl with the columns: revealed_func, test_func, description
     """
+
     @staticmethod
     def can_eval_func(func_code):
         validation_function = "def validate_input_args(**kwargs):\n    pass"
@@ -270,19 +281,22 @@ class InitialFormatter:
             return True
         except Exception as e:
             return False
-        
+
     @staticmethod
     def drop_non_eval_funcs(df, func_column="test_func"):
-        for idx, row in tqdm(df.iterrows(), desc="Dropping non-evalable functions", total=len(df)):
+        for idx, row in tqdm(
+            df.iterrows(), desc="Dropping non-evalable functions", total=len(df)
+        ):
             func_code = row[func_column]
             if not InitialFormatter.can_eval_func(func_code):
                 df.at[idx, func_column] = None
         initial_length = len(df)
         df = df[~df[func_column].isna()].reset_index(drop=True)
         final_length = len(df)
-        log_info(f"Dropped {initial_length - final_length}/{initial_length} functions that could not be evaled.")
+        log_info(
+            f"Dropped {initial_length - final_length}/{initial_length} functions that could not be evaled."
+        )
         return df
-
 
     @staticmethod
     def load_cruxeval(parameters):
@@ -324,14 +338,18 @@ class InitialFormatter:
         dataset = InitialFormatter.drop_non_eval_funcs(dataset, "test_func")
         model_name = parameters["benchmark_creation_model"]
         model_engine = parameters["benchmark_creation_model_engine"]
-        model = model_factory(model_name=model_name, model_kind="lm", model_engine=model_engine)
+        model = model_factory(
+            model_name=model_name, model_kind="lm", model_engine=model_engine
+        )
         dataset["description"] = None
-        for idx, row in tqdm(dataset.iterrows(), desc="Generating descriptions", total=len(dataset)):
+        for idx, row in tqdm(
+            dataset.iterrows(), desc="Generating descriptions", total=len(dataset)
+        ):
             prompt = row["description_prompt"]
             description = model.infer(prompt, max_new_tokens=100)
             dataset.at[idx, "description"] = description.strip()
         return {"test": dataset}
-    
+
     @staticmethod
     def load_humaneval(parameters):
         dataset = load_dataset("openai/openai_humaneval", split="test").to_pandas()
@@ -364,23 +382,27 @@ def decode_shift(s: str):
         dataset["test_func"] = dataset["prompt"].apply(get_setup) + dataset[
             "function_only"
         ].apply(anonymize_header)
-        dataset["revealed_func"] = dataset["prompt"] + "\n" + dataset["canonical_solution"]
+        dataset["revealed_func"] = (
+            dataset["prompt"] + "\n" + dataset["canonical_solution"]
+        )
         dataset["description_prompt"] = dataset["revealed_func"].apply(
-            lambda x: Prompts.describe
-            + x
-            + "\nDescription: "
+            lambda x: Prompts.describe + x + "\nDescription: "
         )
         dataset = InitialFormatter.drop_non_eval_funcs(dataset, "test_func")
         model_name = parameters["benchmark_creation_model"]
         model_engine = parameters["benchmark_creation_model_engine"]
-        model = model_factory(model_name=model_name, model_kind="lm", model_engine=model_engine)
+        model = model_factory(
+            model_name=model_name, model_kind="lm", model_engine=model_engine
+        )
         dataset["description"] = None
-        for idx, row in tqdm(dataset.iterrows(), desc="Generating descriptions", total=len(dataset)):
+        for idx, row in tqdm(
+            dataset.iterrows(), desc="Generating descriptions", total=len(dataset)
+        ):
             prompt = row["description_prompt"]
             description = model.infer(prompt, max_new_tokens=100)
             dataset.at[idx, "description"] = description.strip()
-        return {"test": dataset} 
-    
+        return {"test": dataset}
+
     @staticmethod
     def load_mbpp(parameters):
         # Muennighoff/mbpp
@@ -480,9 +502,13 @@ def decode_shift(s: str):
         df = InitialFormatter.drop_non_eval_funcs(df, "test_func")
         model_name = parameters["benchmark_creation_model"]
         model_engine = parameters["benchmark_creation_model_engine"]
-        model = model_factory(model_name=model_name, model_kind="lm", model_engine=model_engine)
+        model = model_factory(
+            model_name=model_name, model_kind="lm", model_engine=model_engine
+        )
         df["description"] = None
-        for idx, row in tqdm(df.iterrows(), desc="Generating descriptions", total=len(df)):
+        for idx, row in tqdm(
+            df.iterrows(), desc="Generating descriptions", total=len(df)
+        ):
             prompt = row["description_prompt"]
             description = model.infer(prompt, max_new_tokens=100)
             df.at[idx, "description"] = description.strip()
@@ -538,17 +564,21 @@ def decode_shift(s: str):
             lambda x: Prompts.describe + x + "\nDescription: "
         )
         df = InitialFormatter.drop_non_eval_funcs(df, "test_func")
-        #df = df.sample(frac=0.75, random_state=42).reset_index(drop=True)
+        # df = df.sample(frac=0.75, random_state=42).reset_index(drop=True)
         model_name = parameters["benchmark_creation_model"]
         model_engine = parameters["benchmark_creation_model_engine"]
-        model = model_factory(model_name=model_name, model_kind="lm", model_engine=model_engine)
+        model = model_factory(
+            model_name=model_name, model_kind="lm", model_engine=model_engine
+        )
         df["description"] = None
-        for idx, row in tqdm(df.iterrows(), desc="Generating descriptions", total=len(df)):
+        for idx, row in tqdm(
+            df.iterrows(), desc="Generating descriptions", total=len(df)
+        ):
             prompt = row["description_prompt"]
             description = model.infer(prompt, max_new_tokens=100)
-            df.at[idx, "description"] = description.strip() 
+            df.at[idx, "description"] = description.strip()
         return {"train": df}
-    
+
 
 def get_validation_output(validation_func):
     validation_func = validation_func.strip()
@@ -557,19 +587,28 @@ def get_validation_output(validation_func):
     else:
         return validation_func + "\n"
 
+
 def create_validation_function(dataset, parameters):
-    dataset["validation_prompt"] = dataset["revealed_func"].apply(lambda x: Prompts.validation_creator + x + "\nValidation Function:\n")
+    dataset["validation_prompt"] = dataset["revealed_func"].apply(
+        lambda x: Prompts.validation_creator + x + "\nValidation Function:\n"
+    )
     parameters = load_parameters(parameters)
     model_name = parameters["benchmark_creation_model"]
     model_engine = parameters["benchmark_creation_model_engine"]
-    model = model_factory(model_name=model_name, model_kind="lm", model_engine=model_engine)
+    model = model_factory(
+        model_name=model_name, model_kind="lm", model_engine=model_engine
+    )
     model["validation_func"] = None
     model["test_func_validated"] = None
-    for idx, row in tqdm(dataset.iterrows(), desc="Generating validation functions", total=len(dataset)):
+    for idx, row in tqdm(
+        dataset.iterrows(), desc="Generating validation functions", total=len(dataset)
+    ):
         prompt = row["validation_prompt"]
         validation_func = model.infer(prompt, max_new_tokens=200)
         dataset.at[idx, "validation_func"] = get_validation_output(validation_func)
-        dataset.at[idx, "test_func_validated"] = row["validation_func"] + "\n" + row["test_func"]
+        dataset.at[idx, "test_func_validated"] = (
+            row["validation_func"] + "\n" + row["test_func"]
+        )
         try:
             runner = RunTestFunc(row["test_func_validated"])
         except Exception as e:
@@ -578,14 +617,17 @@ def create_validation_function(dataset, parameters):
     initial_length = len(dataset)
     dataset = dataset[~dataset["test_func_validated"].isna()].reset_index(drop=True)
     final_length = len(dataset)
-    log_info(f"Dropped {initial_length - final_length}/{initial_length} functions that could not be validated.")
+    log_info(
+        f"Dropped {initial_length - final_length}/{initial_length} functions that could not be validated."
+    )
     return dataset
 
+
 def create_examples(dataset, parameters):
-    # make sure to store the input output examples in separate columns as reprs with a try and except in case they cant be repred. 
+    # make sure to store the input output examples in separate columns as reprs with a try and except in case they cant be repred.
+    # also name this all_inputs and all_outputs so that code prediction can access them the same for interactive and ft
     pass
 
-    
 
 @click.group()
 def cli():
@@ -593,7 +635,12 @@ def cli():
 
 
 @click.command()
-@click.option("--dataset", type=click.Choice(TRAIN_DATASETS + TEST_DATASETS), required=True, help="The dataset to load and format.")
+@click.option(
+    "--dataset",
+    type=click.Choice(TRAIN_DATASETS + TEST_DATASETS),
+    required=True,
+    help="The dataset to load and format.",
+)
 def create_initial(dataset):
     parameters = load_parameters()
     df_dict = None
@@ -610,7 +657,7 @@ def create_initial(dataset):
         df_dict = InitialFormatter.load_magic_coder(parameters)
     else:
         raise ValueError(f"Unknown dataset: {dataset}")
-    save_path = parameters["data_dir"] + f"/benchmark_processing/initial/{dataset}/"  
+    save_path = parameters["data_dir"] + f"/benchmark_processing/initial/{dataset}/"
     os.makedirs(save_path, exist_ok=True)
     for split, df in df_dict.items():
         df.to_json(save_path + f"{split}.jsonl", orient="records", lines=True)
@@ -627,46 +674,76 @@ def join_all():
         split = get_split(dataset)
         path = initial_path + f"{dataset}/{split}.jsonl"
         if not os.path.exists(path):
-            log_error(f"{split} file for {dataset} not found at {path}.", parameters=parameters)
+            log_error(
+                f"{split} file for {dataset} not found at {path}.",
+                parameters=parameters,
+            )
         df = pd.read_json(path, orient="records", lines=True)
         df["dataset"] = dataset
         dfs.append(df)
     all_df = pd.concat(dfs, ignore_index=True)
-    all_df.to_json(parameters["data_dir"] + f"/benchmark_processing/all_{split}.jsonl", orient="records", lines=True)
-    log_info(f"Saved all train data to {parameters['data_dir'] + f'/benchmark_processing/all_{split}.jsonl'}")
+    all_df.to_json(
+        parameters["data_dir"] + f"/benchmark_processing/all_{split}.jsonl",
+        orient="records",
+        lines=True,
+    )
+    log_info(
+        f"Saved all train data to {parameters['data_dir'] + f'/benchmark_processing/all_{split}.jsonl'}"
+    )
 
 
 def do_validation(split, parameters):
     load_path = parameters["data_dir"] + f"/benchmark_processing/all_{split}.jsonl"
-    save_path = parameters["data_dir"] + f"/benchmark_processing/validated_{split}.jsonl"
+    save_path = (
+        parameters["data_dir"] + f"/benchmark_processing/validated_{split}.jsonl"
+    )
     if not os.path.exists(load_path):
         log_error(f"All {split} file not found at {load_path}.", parameters=parameters)
     if os.path.exists(save_path):
-        log_info(f"Validated {split} file already exists at {save_path}, skipping validation.", parameters=parameters)
+        log_info(
+            f"Validated {split} file already exists at {save_path}, skipping validation.",
+            parameters=parameters,
+        )
         return
     df = pd.read_json(load_path, orient="records", lines=True)
     df = create_validation_function(df, parameters)
     df.to_json(save_path, orient="records", lines=True)
     log_info(f"Saved validated {split} data to {save_path}", parameters=parameters)
 
+
 def do_example_creation(split, parameters):
-    load_path = parameters["data_dir"] + f"/benchmark_processing/validated_{split}.jsonl"
-    save_path = parameters["data_dir"] + f"/benchmark_processing/validated_{split}_with_examples.jsonl"
+    load_path = (
+        parameters["data_dir"] + f"/benchmark_processing/validated_{split}.jsonl"
+    )
+    save_path = (
+        parameters["data_dir"]
+        + f"/benchmark_processing/validated_{split}_with_examples.jsonl"
+    )
     if not os.path.exists(load_path):
-        log_error(f"Validated {split} file not found at {load_path}.", parameters=parameters)
+        log_error(
+            f"Validated {split} file not found at {load_path}.", parameters=parameters
+        )
     if os.path.exists(save_path):
-        log_info(f"Validated with examples {split} file already exists at {save_path}, skipping example creation.", parameters=parameters)
+        log_info(
+            f"Validated with examples {split} file already exists at {save_path}, skipping example creation.",
+            parameters=parameters,
+        )
         return
     df = pd.read_json(load_path, orient="records", lines=True)
     df = create_examples(df, parameters)
     df.to_json(save_path, orient="records", lines=True)
-    log_info(f"Saved validated with examples {split} data to {save_path}", parameters=parameters)
+    log_info(
+        f"Saved validated with examples {split} data to {save_path}",
+        parameters=parameters,
+    )
+
 
 @click.command()
 def validate_all():
     parameters = load_parameters()
     do_validation("train", parameters)
     do_validation("test", parameters)
+
 
 @click.command()
 def create_examples_all():

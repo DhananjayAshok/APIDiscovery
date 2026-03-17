@@ -10,9 +10,9 @@ from utils import (
     get_zeroshot_starting_details,
     get_prev_results_str,
     RunTestFunc,
-    model_factory, 
+    model_factory,
     get_lm,
-    call_infer
+    call_infer,
 )
 from eval import get_output_save_name, get_code_save_name, get_input_save_name
 import click
@@ -30,6 +30,7 @@ def get_save_paths(dataset_name, save_name):
 
 def word_count(s):
     return len(s.split())
+
 
 def interactive(
     func_code: str, examples, model, max_iterations=100, max_previous_results=10
@@ -80,10 +81,10 @@ Hypothesis Conclusion: """
         prev_results_str = get_prev_results_str(prev_results, max_previous_results)
         prompt = reasoning_prompt.replace("[PREV]", prev_results_str).replace(
             "[HYPOTHESIS]", hypothesis
-        )        
+        )
         response = model.infer(prompt, max_new_tokens=300)
         reasoning = response.split("[STOP]")[0].strip()
-        data.append([prompt, reasoning+ "\n[STOP]", word_count(reasoning) < 250])
+        data.append([prompt, reasoning + "\n[STOP]", word_count(reasoning) < 250])
         prompt = (
             input_prompt.replace("[PREV]", prev_results_str)
             .replace("[HYPOTHESIS]", hypothesis)
@@ -119,7 +120,14 @@ Hypothesis Conclusion: """
             .replace("[REASONING]", reasoning)
         )
         reflection_response = model.infer(reflection, max_new_tokens=300)
-        data.append([reflection, reflection_response + "\n[STOP]", word_count(reflection_response) < 250 and reflection_response.lower().count("summary:") == 1])
+        data.append(
+            [
+                reflection,
+                reflection_response + "\n[STOP]",
+                word_count(reflection_response) < 250
+                and reflection_response.lower().count("summary:") == 1,
+            ]
+        )
         if reflection_response.lower().count("summary:") == 1:
             decision, summary = (
                 reflection_response.lower().split("summary:")[0].strip(),
@@ -170,7 +178,9 @@ def run_incontext(dataset_name, model_name, save_name, override_gen):
         df = pd.read_json(input_file, orient="records", lines=True)
         model = get_lm(model_name)
         for i, row in tqdm(df.iterrows(), total=len(df), desc="Running Inference"):
-            df["predicted_description"] = model.infer(row["direct_prompt"], max_new_tokens=300)
+            df["predicted_description"] = model.infer(
+                row["direct_prompt"], max_new_tokens=300
+            )
         df.to_json(output_file, orient="records", lines=True)
         log_info(f"Saved predictions to {output_file}")
         return
@@ -216,7 +226,7 @@ def run_interactive(dataset_name, model_name, save_name, override_gen):
             test_func_str = row["test_func_validated"]
             true_description = row["description"]
             examples = row["train_inputs"]
-            # TODO: Sort out train_output getting here too. 
+            # TODO: Sort out train_output getting here too.
             predicted_description, n_queries, concluded, step_df, all_examples = (
                 interactive(test_func_str, examples, model)
             )
@@ -244,7 +254,12 @@ def run_interactive(dataset_name, model_name, save_name, override_gen):
 @click.command()
 @click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
-@click.option("--sample_perc", type=float, default=1, help="Percentage of the dataset to sample for evaluation.")
+@click.option(
+    "--sample_perc",
+    type=float,
+    default=1,
+    help="Percentage of the dataset to sample for evaluation.",
+)
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
@@ -253,7 +268,9 @@ def create_interactive_training_data(dataset_name, model_name, override_gen):
     if save_name is None:
         save_name = model_save_name
     parameters = load_parameters()
-    save_path = parameters["data_dir"] + f"/finetuning/{dataset_name}/{model_save_name}.csv"
+    save_path = (
+        parameters["data_dir"] + f"/finetuning/{dataset_name}/{model_save_name}.csv"
+    )
     if os.path.exists(save_path) and not override_gen:
         log_info(
             f"Output file {save_path} already exists, skipping generation. Run with override_gen=True to re-evaluate."
@@ -261,10 +278,7 @@ def create_interactive_training_data(dataset_name, model_name, override_gen):
     else:
         dataset = get_dataset(dataset_name)
         model = get_lm(model_name)
-        columns = [
-            "input", 
-            "output"
-        ]
+        columns = ["input", "output"]
         data = []
         for i, row in tqdm(
             dataset.iterrows(),
@@ -310,12 +324,9 @@ Reasoning:
 
 def run_eval_code(
     model_name: str,
-    dataset_name: str,
-    save_name: str,
-    override_gen: bool,
     input_file: str,
     output_file: str,
-    intermediate_file: str,
+    override_gen: bool,
     df: pd.DataFrame,
     prompt_column: str,
     output_column: str = "predicted_code_output",
@@ -326,25 +337,16 @@ def run_eval_code(
     Takes a DataFrame with prompts, runs inference, extracts code, and saves results.
     """
     df.to_json(input_file, orient="records", lines=True)
-    df = call_infer(
-        run_name=save_name,
-        dataset_name=dataset_name,
-        split="test",
-        input_file=input_file,
-        output_file=intermediate_file,
-        input_column=prompt_column,
-        output_column=output_column,
-        max_new_tokens=max_new_tokens,
-        model=model_name,
-        parameters=load_parameters(),
-        ignore_checkpoint=override_gen,
-    )
-    if not os.path.exists(intermediate_file):
-        log_warn(
-            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
+    if os.path.exists(output_file) and not override_gen:
+        log_info(
+            f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
         return df
-    df = pd.read_json(intermediate_file, orient="records", lines=True)
+    model = get_lm(model_name)
+    for i, row in tqdm(df.iterrows(), total=len(df), desc="Generating Code"):
+        prompt = row[prompt_column]
+        response = model.infer(prompt, max_new_tokens=max_new_tokens)
+        df.at[i, output_column] = response
     parse_errors = 0
 
     def extract_code(row):
@@ -376,36 +378,6 @@ def run_eval_code(
     return df
 
 
-def get_all_examples_str(row):
-    if "all_examples" in row:
-        examples = eval(row["all_examples"])
-        examples = [
-            f"Input: {examples[i][0]} => Output: {examples[i][1]}, Error: {examples[i][2]}"
-            for i in range(len(examples))
-        ]
-    else:
-        examples = row["train_inputs"]
-        if isinstance(examples, str):
-            examples = eval(examples)
-        test_func_code = row["test_func_validated"]
-        example_outputs = []
-        try:
-            runner = RunTestFunc(test_func_code)
-            for example in examples:
-                example_outputs.append(runner.run_test_str(example))
-        except:
-            log_warn(
-                f"Could not run test function for row {row}. This should never happen."
-            )
-            return None
-        examples = [
-            f"Input: {examples[i]} => Output: {example_outputs[i][0]}, Error: {example_outputs[i][1]}"
-            for i in range(len(examples))
-        ]
-    examples_str = "\n".join(examples)
-    return examples_str
-
-
 def get_code_model(model_name):
     parameters = load_parameters()
     code_generation_model = parameters["code_generation_model_name"]
@@ -415,7 +387,12 @@ def get_code_model(model_name):
 
 
 def do_predict_code(
-    model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None
+    model_name,
+    dataset_name,
+    save_name,
+    override_gen,
+    prediction_column,
+    load_name=None,
 ):
     if load_name is None:
         load_name = save_name
@@ -435,10 +412,10 @@ def do_predict_code(
     def make_code_prompt(row):
         true_description = None
         true_description = row["description"]
-        predicted_description = row["predicted_description_clean"]
+        predicted_description = row["predicted_description"]
         test_func_str = row["test_func_validated"]
         func_header = get_test_func_header(test_func_str)
-        examples_str = get_all_examples_str(row)
+        examples_str = get_all_examples_str(row)  # TODO: Implement
         if prediction_column == "prediction":
             use_description = predicted_description
         elif prediction_column == "true":
@@ -602,13 +579,13 @@ def run_eval_output(
     return original_df
 
 
-
 def get_output_model(model_name):
     parameters = load_parameters()
     input_output_model = parameters["input_output_prediction_model_name"]
     if input_output_model == "self":
         input_output_model = model_name
     return input_output_model
+
 
 def do_predict_output(
     model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None
@@ -635,7 +612,7 @@ def do_predict_output(
             true_description = row["true_description"]
         else:
             true_description = row["description"]
-        predicted_description = row["predicted_description_clean"]
+        predicted_description = row["predicted_description"]
         examples_str = get_all_examples_str(row)
         if prediction_column not in ["prediction", "true"]:
             log_error(
@@ -729,8 +706,11 @@ def run_eval_input(
             input_part = response.split("[STOP]")[0]
         else:
             input_part = response
-        if "Suggested Input:" in input_part:
-            suggested_input = input_part.split("Suggested Input:")[1].strip()
+        if "input:" in input_part.lower():
+            if "Input:" in input_part:
+                suggested_input = input_part.split("Input:")[1].strip()
+            else:
+                suggested_input = input_part.split("input:")[1].strip()
             return suggested_input
         else:
             return None
@@ -760,6 +740,7 @@ def get_input_model(model_name):
     if input_output_model == "self":
         input_output_model = model_name
     return input_output_model
+
 
 def do_predict_input(
     model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None
@@ -804,7 +785,7 @@ def do_predict_input(
             true_description = row["description"]
         else:
             true_description = row["true_description"]
-        description = row["predicted_description_clean"]
+        description = row["predicted_description"]
         test_func_str = row["test_func_validated"]
         func_header = get_test_func_header(test_func_str)
         examples_str = get_all_examples_str(row)
