@@ -575,8 +575,17 @@ def decode_shift(s: str):
             df.iterrows(), desc="Generating descriptions", total=len(df)
         ):
             prompt = row["description_prompt"]
-            description = model.infer(prompt, max_new_tokens=100)
-            df.at[idx, "description"] = description.strip()
+            try:
+                description = model.infer(prompt, max_new_tokens=100)
+                df.at[idx, "description"] = description.strip()
+            except Exception as e:
+                description = None
+        original_length = len(df)
+        df = df[~df["description"].isna()].reset_index(drop=True)
+        new_length = len(df)
+        log_info(
+            f"MagicCoder: Removed {original_length - new_length}/{original_length} entries where description generation failed."
+        )
         return {"train": df}
 
 
