@@ -82,13 +82,6 @@ def parse_eval(evaluation_path):
     log_info(f"Saved scored predictions to {evaluation_path}")
 
 
-def rectify_description(x):
-    if isinstance(x, list):
-        x = x[0] if len(x) > 0 else ""
-    x = x.strip()
-    x = x.split("\n")[0]  # take only the first line if there are multiple
-    return x
-
 def score_description_predictions(
     *,
     predictions_save_path,

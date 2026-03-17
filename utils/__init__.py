@@ -4,9 +4,13 @@ from utils.log_handling import log_error, log_info, log_warn, log_dict
 from utils.hash_handling import write_meta, add_meta_details
 from utils.plot_handling import Plotter, sns, plt
 from utils.fundamental import file_makedir
-from utils.lm_inference import HuggingFaceModel, OpenAIModel, call_infer
 import multiprocessing
 from ast import literal_eval
+from utils.lm_inference import (
+    model_factory, 
+    get_lm, 
+    call_infer
+)
 
 
 def get_test_func_header(func_code):
@@ -188,7 +192,7 @@ Now provide your reasoning below and then say [STOP]
 Reasoning:"""
 
 
-def get_zero_shot_starting_prompt(func_header, previous_examples, full_fill=True):
+def get_interactive_starting_prompt(func_header, previous_examples, full_fill=True):
     prev_str = get_prev_results_str(previous_examples, max_previous_results=None)
     prompt = first_reasoning_prompt.replace("[HEADER]", func_header)
     if full_fill:
@@ -197,8 +201,8 @@ def get_zero_shot_starting_prompt(func_header, previous_examples, full_fill=True
     return prompt
 
 
-def get_zeroshot_starting_details(func_code, examples):
+def get_interactive_starting_details(func_code, examples):
     prev_results, runner = get_initial_results(func_code, examples)
     func_header = get_test_func_header(func_code)
-    prompt = get_zero_shot_starting_prompt(func_header, prev_results, full_fill=False)
+    prompt = get_interactive_starting_prompt(func_header, prev_results, full_fill=False)
     return prompt, runner, prev_results, func_header

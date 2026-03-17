@@ -195,8 +195,29 @@ def anonymize_header(func_code: str) -> str:
         header = header.replace(f"({arg_name},", f"(arg{i},")
         header = header.replace(f"({arg_name}:", f"(arg{i}:")
         header = header.replace(f" {arg_name}):", f" arg{i}):")
-        header = header.replace(f",{arg_name}):", f",arg{i}):")
+        header = header.replace(f",{arg_name}):", f",arg{i}):")        
         body = f"    {arg_name} = arg{i}\n" + body
+    # strip out any potential type annotations from the header
+    if "-> " in header:
+        header = header.split("-> ")[0].strip() + ":"
+    if len(args_raw) == 0:
+        pass
+    else:
+        current_arg_index = 0
+        final_arg_index = len(args_raw) - 1
+        while current_arg_index <= final_arg_index:
+            arg_position = header.find(f"arg{current_arg_index}")
+            if arg_position == -1:
+                raise ValueError(f"Could not find argument position for arg{current_arg_index} in header: {header}")
+            if current_arg_index == final_arg_index:
+                next_arg_position = header.find("):", arg_position)
+                header = header[:arg_position] + f"arg{current_arg_index}):"
+            else:
+                next_arg_position = header.find(f"arg{current_arg_index + 1}", arg_position)
+                if next_arg_position == -1:
+                    raise ValueError(f"Could not find next argument position for arg{current_arg_index + 1} in header: {header}")
+                header = header[:arg_position] + f"arg{current_arg_index}, " + header[next_arg_position:]                
+            current_arg_index += 1
     # adding a validate function at the start of the body
     # should be able to exec anonymized code without the validate_input_args call now, do it and if it fails I need to debug:
     validate_call = "    validate_input_args("
@@ -258,6 +279,7 @@ class RawLoaders:
         # rename code column to test_func
         dataset = dataset.rename(columns={"code": "test_func"})
         dataset["test_func_anon"] = dataset["test_func"].apply(anonymize_header)
+        breakpoint()
 
         # dataset['inputs'] = dataset['inputs'].apply(lambda x: [x])
         # dataset['outputs'] = dataset['outputs'].apply(lambda x: [x])
@@ -333,6 +355,7 @@ def decode_shift(s: str):
         dataset["test_func_anon"] = dataset["prompt"].apply(get_setup) + dataset[
             "function_only"
         ].apply(anonymize_header)
+        breakpoint()
         dataset["validation_prompt"] = dataset["test_func_anon"].apply(
             lambda x: Prompts.validation_creator + x + "\nValidation Function:\n"
         )
@@ -369,6 +392,7 @@ def decode_shift(s: str):
         dataset["test_func_anon"] = dataset["test_func"].apply(get_setup) + dataset[
             "test_func"
         ].apply(last_function).apply(anonymize_header)
+        breakpoint()
 
         def rewrite_test_list(row):
             func = last_function(row["test_func"])
@@ -418,6 +442,7 @@ def decode_shift(s: str):
         # manually removing index 129 which has a weird function
         df = df.drop(index=129).reset_index(drop=True)
         df["test_func_anon"] = df["output"].apply(anonymize_header)
+        breakpoint()
 
         def insert_docstring(row, func_column="test_func_anon"):
             func = row[func_column]
@@ -471,6 +496,7 @@ def decode_shift(s: str):
             f"MagicCoder: Removed {original_length - new_length}/{original_length} entries without a valid single python function."
         )
         df["test_func_anon"] = df["func"].apply(anonymize_header)
+        breakpoint()
 
         def insert_docstring(row, func_column="test_func_anon"):
             func = row[func_column]

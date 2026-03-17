@@ -1,4 +1,3 @@
-from utils.lm_inference import HuggingFaceModel, OpenAIModel
 import os
 from utils import (
     load_parameters,
@@ -11,8 +10,11 @@ from utils import (
     get_zeroshot_starting_details,
     get_prev_results_str,
     RunTestFunc,
+    model_factory, 
+    get_lm,
+    call_infer
 )
-from eval import rectify_description, get_output_save_name, get_code_save_name, get_input_save_name
+from eval import get_output_save_name, get_code_save_name, get_input_save_name
 import click
 from load_data import get_dataset
 import pandas as pd
@@ -26,7 +28,10 @@ def get_save_paths(dataset_name, save_name):
     return save_path
 
 
-def zero_shot(
+def word_count(s):
+    return len(s.split())
+
+def interactive(
     func_code: str, examples, model, max_iterations=100, max_previous_results=10
 ):
     reasoning_prompt, runner, prev_results, func_header = get_zeroshot_starting_details(
@@ -69,22 +74,22 @@ Summary: <your extremely concise summary or brief revised hypothesis here>
 
 Now, provide your conclusion below, remember to say [STOP] after your summary.
 Hypothesis Conclusion: """
-    steps = []
+    columns = ["prompt", "output", "is_good"]
+    data = []
     for i in tqdm(range(max_iterations), desc="Function Discovery", leave=False):
         prev_results_str = get_prev_results_str(prev_results, max_previous_results)
         prompt = reasoning_prompt.replace("[PREV]", prev_results_str).replace(
             "[HYPOTHESIS]", hypothesis
-        )
-        response = model.generate(prompt, max_new_tokens=300)
+        )        
+        response = model.infer(prompt, max_new_tokens=300)
         reasoning = response.split("[STOP]")[0].strip()
-        steps.append({"input": prompt, "output": reasoning})
+        data.append([prompt, reasoning+ "\n[STOP]", word_count(reasoning) < 250])
         prompt = (
             input_prompt.replace("[PREV]", prev_results_str)
             .replace("[HYPOTHESIS]", hypothesis)
             .replace("[REASONING]", reasoning)
         )
-        response = model.generate(prompt, max_new_tokens=300)
-        steps.append({"input": prompt, "output": response})
+        response = model.infer(prompt, max_new_tokens=300)
         suggested_inputs = None
         options = response.strip().split("\n")
         for opt in options:
@@ -100,6 +105,7 @@ Hypothesis Conclusion: """
             last_input_str = "You did not suggest any inputs. Do not do that again."
         # print(f"Suggested inputs: {suggested_inputs}")
         ret, err = runner.run_test_str(suggested_inputs)
+        data.append([prompt, response + "\n[STOP]", err is not None])
         prev_results.append((suggested_inputs, ret, err))
         last_input_str = (
             "Input: " + suggested_inputs
@@ -112,8 +118,8 @@ Hypothesis Conclusion: """
             .replace("[LAST_INPUTS]", last_input_str)
             .replace("[REASONING]", reasoning)
         )
-        reflection_response = model.generate(reflection, max_new_tokens=300)
-        steps.append({"input": reflection_prompt, "output": reflection_response})
+        reflection_response = model.infer(reflection, max_new_tokens=300)
+        data.append([reflection, reflection_response + "\n[STOP]", word_count(reflection_response) < 250 and reflection_response.lower().count("summary:") == 1])
         if reflection_response.lower().count("summary:") == 1:
             decision, summary = (
                 reflection_response.lower().split("summary:")[0].strip(),
@@ -134,6 +140,7 @@ Hypothesis Conclusion: """
             break
         else:
             pass
+    steps = pd.DataFrame(data=data, columns=columns)
     return hypothesis, runner.access_counter, concluded, steps, prev_results
 
 
@@ -146,7 +153,7 @@ Hypothesis Conclusion: """
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def run_finetuned(dataset_name, model_name, save_name, override_gen):
+def run_incontext(dataset_name, model_name, save_name, override_gen):
     parameters = load_parameters()
     data_dir = parameters["data_dir"] + f"/final/{dataset_name}/"
     model_save_name = model_name.split("/")[-1].strip()
@@ -160,28 +167,12 @@ def run_finetuned(dataset_name, model_name, save_name, override_gen):
     else:
         input_file = f"{data_dir}/test_filtered.jsonl"
         output_file = save_path
-        call_infer(
-            run_name=save_name,
-            dataset_name=dataset_name,
-            split="test",
-            input_file=input_file,
-            output_file=output_file,
-            input_column="direct_prompt",
-            output_column="predicted_description",
-            max_new_tokens=300,
-            model=model_name,
-            parameters=parameters,
-            ignore_checkpoint=override_gen,
-        )
-        if os.path.exists(output_file):
-            df = pd.read_json(output_file, lines=True)
-            df["predicted_description_clean"] = df["predicted_description"].apply(rectify_description)
-            df.to_json(output_file, orient="records", lines=True)
-            log_info(f"Saved predictions to {output_file}")
-        else:
-            log_warn(
-                f"Output file {output_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
-            )
+        df = pd.read_json(input_file, orient="records", lines=True)
+        model = get_lm(model_name)
+        for i, row in tqdm(df.iterrows(), total=len(df), desc="Running Inference"):
+            df["predicted_description"] = model.infer(row["direct_prompt"], max_new_tokens=300)
+        df.to_json(output_file, orient="records", lines=True)
+        log_info(f"Saved predictions to {output_file}")
         return
 
 
@@ -194,7 +185,7 @@ def run_finetuned(dataset_name, model_name, save_name, override_gen):
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def run_zeroshot(dataset_name, model_name, save_name, override_gen):
+def run_interactive(dataset_name, model_name, save_name, override_gen):
     model_save_name = model_name.split("/")[-1].strip()
     if save_name is None:
         save_name = model_save_name
@@ -205,14 +196,11 @@ def run_zeroshot(dataset_name, model_name, save_name, override_gen):
             f"Output file {save_path} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
     else:
+        model = get_lm(model_name)
         dataset = get_dataset(dataset_name)
-        if "gpt" in model_name:
-            model = OpenAIModel(model_name=model_name)
-        else:
-            model = HuggingFaceModel(model_name=model_name)
         columns = [
             "test_func_validated",
-            "true_description",
+            "description",
             "n_queries",
             "concluded",
             "predicted_description",
@@ -228,9 +216,11 @@ def run_zeroshot(dataset_name, model_name, save_name, override_gen):
             test_func_str = row["test_func_validated"]
             true_description = row["description"]
             examples = row["train_inputs"]
-            predicted_description, n_queries, concluded, steps, all_examples = (
-                zero_shot(test_func_str, examples, model)
+            # TODO: Sort out train_output getting here too. 
+            predicted_description, n_queries, concluded, step_df, all_examples = (
+                interactive(test_func_str, examples, model)
             )
+            steps = step_df.to_dict(orient="records")
             repr_examples = repr(all_examples)
             data.append(
                 [
@@ -244,11 +234,55 @@ def run_zeroshot(dataset_name, model_name, save_name, override_gen):
                 ]
             )
         df = pd.DataFrame(data=data, columns=columns)
-        df["predicted_description_clean"] = df["predicted_description"].apply(rectify_description)
         for column in df:
             dataset[column] = df[column]
         dataset.to_json(save_path, orient="records", lines=True)
         log_info(f"Saved predictions to {save_path}")
+    return save_path
+
+
+@click.command()
+@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
+@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
+@click.option("--sample_perc", type=float, default=1, help="Percentage of the dataset to sample for evaluation.")
+@click.option(
+    "--override_gen", is_flag=True, help="Whether to override existing generation."
+)
+def create_interactive_training_data(dataset_name, model_name, override_gen):
+    model_save_name = model_name.split("/")[-1].strip()
+    if save_name is None:
+        save_name = model_save_name
+    parameters = load_parameters()
+    save_path = parameters["data_dir"] + f"/finetuning/{dataset_name}/{model_save_name}.csv"
+    if os.path.exists(save_path) and not override_gen:
+        log_info(
+            f"Output file {save_path} already exists, skipping generation. Run with override_gen=True to re-evaluate."
+        )
+    else:
+        dataset = get_dataset(dataset_name)
+        model = get_lm(model_name)
+        columns = [
+            "input", 
+            "output"
+        ]
+        data = []
+        for i, row in tqdm(
+            dataset.iterrows(),
+            total=len(dataset),
+            desc=f"Evaluating {dataset_name}",
+        ):
+            test_func_str = row["test_func_validated"]
+            true_description = row["description"]
+            examples = row["train_inputs"]
+            predicted_description, n_queries, concluded, step_df, all_examples = (
+                interactive(test_func_str, examples, model)
+            )
+            step_df = step_df[step_df["is_good"] == True]
+            for _, step_row in step_df.iterrows():
+                data.append([step_row["prompt"], step_row["output"]])
+        df = pd.DataFrame(data=data, columns=columns)
+        df.to_csv(save_path, orient="records", lines=True)
+        log_info(f"Saved finetuning data to {save_path}")
     return save_path
 
 
@@ -317,10 +351,7 @@ def run_eval_code(
         response = row[output_column]
         if isinstance(response, list):
             response = response[0]
-        if "description" in row:
             true_description = row["description"]
-        else:
-            true_description = row["true_description"]
         if "[STOP]" in response:
             code_part = response.split("[STOP]")[0]
         else:
@@ -403,10 +434,7 @@ def do_predict_code(
 
     def make_code_prompt(row):
         true_description = None
-        if "true_description" in row:
-            true_description = row["true_description"]
-        else:
-            true_description = row["description"]
+        true_description = row["description"]
         predicted_description = row["predicted_description_clean"]
         test_func_str = row["test_func_validated"]
         func_header = get_test_func_header(test_func_str)
@@ -542,10 +570,7 @@ def run_eval_output(
     parse_errors = 0
 
     def extract_output(row):
-        if "description" in row:
-            true_description = row["description"]
-        else:
-            true_description = row["true_description"]
+        true_description = row["description"]
         response = row[output_column]
         if isinstance(response, list):
             response = response[0]
@@ -927,8 +952,8 @@ def cli():
     pass
 
 
-cli.add_command(run_finetuned, name="finetuned")
-cli.add_command(run_zeroshot, name="zeroshot")
+cli.add_command(run_incontext, name="incontext")
+cli.add_command(run_interactive, name="interactive")
 cli.add_command(predict_code, name="code")
 cli.add_command(predict_output, name="output")
 cli.add_command(predict_input, name="input")
