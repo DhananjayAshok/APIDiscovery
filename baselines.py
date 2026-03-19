@@ -345,7 +345,6 @@ def run_eval_code(
         response = row[output_column]
         if isinstance(response, list):
             response = response[0]
-            true_description = row["description"]
         if "[STOP]" in response:
             code_part = response.split("[STOP]")[0]
         else:
@@ -499,46 +498,31 @@ Reasoning:
 
 def run_eval_output(
     model_name: str,
-    dataset_name: str,
-    save_name: str,
-    override_gen: bool,
-    input_file: str,
     output_file: str,
-    intermediate_file: str,
     df: pd.DataFrame,
     prompt_column: str,
     prediction_file: str,
     output_column: str = "predicted_output_output",
     max_new_tokens: int = 300,
+    override_gen: bool = False,
 ):
     """
     Common function for running output prediction evaluation.
     """
-    df["original_index"] = df.index
-    df.to_json(input_file, orient="records", lines=True)
-    df = call_infer(
-        run_name=save_name,
-        dataset_name=dataset_name,
-        split="test",
-        input_file=input_file,
-        output_file=intermediate_file,
-        input_column=prompt_column,
-        output_column=output_column,
-        max_new_tokens=max_new_tokens,
-        model=model_name,
-        parameters=load_parameters(),
-        ignore_checkpoint=override_gen,
-    )
-    if not os.path.exists(intermediate_file):
-        log_warn(
-            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
+    if os.path.exists(output_file) and not override_gen:
+        log_info(
+            f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
-        return df
-    df = pd.read_json(intermediate_file, orient="records", lines=True)
+        return pd.read_json(output_file, orient="records", lines=True)
+    df["original_index"] = df.index
+    model = get_lm(model_name)
+    for i, row in tqdm(df.iterrows(), total=len(df), desc="Generating Output Predictions"):
+        prompt = row[prompt_column]
+        response = model.infer(prompt, max_new_tokens=max_new_tokens)
+        df.at[i, output_column] = response
     parse_errors = 0
 
     def extract_output(row):
-        true_description = row["description"]
         response = row[output_column]
         if isinstance(response, list):
             response = response[0]
@@ -593,8 +577,6 @@ def do_predict_output(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
         return
-    input_file = output_file.replace(".jsonl", "_input.jsonl")
-    intermediate_file = output_file.replace(".jsonl", "_intermediate.jsonl")
     df = pd.read_json(prediction_file, orient="records", lines=True)
 
     def make_predict_output_prompt(row):
@@ -626,28 +608,20 @@ def do_predict_output(
     )
     run_eval_output(
         model_name=input_output_model,
-        dataset_name=dataset_name,
-        save_name=save_name,
-        override_gen=override_gen,
-        input_file=input_file,
         output_file=output_file,
-        intermediate_file=intermediate_file,
         df=df,
         prompt_column="predict_output_prompt",
         prediction_file=prediction_file,
         output_column="predicted_output_output",
         max_new_tokens=300,
+        override_gen=override_gen
     )
 
 
 def run_eval_input(
     model_name: str,
-    dataset_name: str,
-    save_name: str,
     override_gen: bool,
-    input_file: str,
     output_file: str,
-    intermediate_file: str,
     df: pd.DataFrame,
     prompt_column: str,
     prediction_file: str,
@@ -659,33 +633,14 @@ def run_eval_input(
     Common function for running input prediction evaluation.
     """
     df["original_index"] = df.index
-    df.to_json(input_file, orient="records", lines=True)
-    print(input_file)
-    df = call_infer(
-        run_name=save_name,
-        dataset_name=dataset_name,
-        split="test",
-        input_file=input_file,
-        output_file=intermediate_file,
-        input_column=prompt_column,
-        output_column=output_column,
-        max_new_tokens=max_new_tokens,
-        model=model_name,
-        parameters=load_parameters(),
-        ignore_checkpoint=override_gen,
-    )
-    if not os.path.exists(intermediate_file):
-        log_warn(
-            f"Intermediate file {intermediate_file} was not created. This can happen with OpenAI inference. Run again when batch is done."
-        )
-        return df
-    df = pd.read_json(intermediate_file, orient="records", lines=True)
+    model = get_lm(model_name)
+    for i, row in tqdm(df.iterrows(), total=len(df), desc="Generating Input Predictions"):
+        prompt = row[prompt_column]
+        response = model.infer(prompt, max_new_tokens=max_new_tokens)
+        df.at[i, output_column] = response
 
     def extract_input(row):
-        if "description" in row:
-            true_description = row["description"]
-        else:
-            true_description = row["true_description"]
+        true_description = row["description"]
         response = row[output_column]
         if isinstance(response, list):
             response = response[0]
@@ -743,8 +698,6 @@ def do_predict_input(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
         return
-    input_file = output_file.replace(".jsonl", "_input.jsonl")
-    intermediate_file = output_file.replace(".jsonl", "_intermediate.jsonl")
     df = pd.read_json(prediction_file, orient="records", lines=True)
     df["target_outputs"] = None
     for i, row in df.iterrows():
@@ -771,7 +724,7 @@ def do_predict_input(
             true_description = row["true_description"]
         description = row["predicted_description"]
         func_header = row["header"]
-        examples_str = get_all_examples_str(row)
+        examples_str = get_prev_results_str(row["all_examples"])
         if prediction_column not in ["prediction", "true"]:
             log_error(
                 f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'."
@@ -798,12 +751,8 @@ def do_predict_input(
     )
     run_eval_input(
         model_name=input_output_model,
-        dataset_name=dataset_name,
-        save_name=save_name,
         override_gen=override_gen,
-        input_file=input_file,
         output_file=output_file,
-        intermediate_file=intermediate_file,
         df=df,
         prompt_column="predict_input_prompt",
         prediction_file=prediction_file,
