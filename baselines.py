@@ -7,7 +7,7 @@ from utils import (
     log_error,
     get_test_func_header,
     call_infer,
-    get_zeroshot_starting_details,
+    get_interactive_starting_prompt,
     get_prev_results_str,
     RunTestFunc,
     model_factory,
@@ -32,17 +32,17 @@ def word_count(s):
     return len(s.split())
 
 
-def interactive(
-    func_code: str, examples, model, max_iterations=100, max_previous_results=10
+def interactive(model, runner, header, train_examples, max_iterations=100, max_previous_results=10
 ):
-    reasoning_prompt, runner, prev_results, func_header = get_zeroshot_starting_details(
-        func_code, examples
-    )
+    prev_results = []
+    for example in train_examples:
+        prev_results.append((example[0], example[1], None))
+    reasoning_prompt = get_interactive_starting_prompt(header, prev_results, max_previous_results)
     concluded = False
     hypothesis = "Not yet formed"
     input_prompt = f"""
 You are given a Python function with the following header:
-{func_header}
+{header}
 Your task is to try various inputs to discover what this function does.
 
 So far, you have tried the following inputs: [PREV]
@@ -58,7 +58,7 @@ Suggested Input:"""
 
     reflection_prompt = f"""
 You are given a Python function with the following header:
-{func_header}
+{header}
 Your task is to try various inputs to discover what this function does.
 
 So far, you have tried the following inputs: [PREV]
@@ -185,6 +185,13 @@ def run_incontext(dataset_name, model_name, save_name, override_gen):
         log_info(f"Saved predictions to {output_file}")
         return
 
+def get_interactive_from_row(model, row):
+    test_func_str = row["test_func_validated"]
+    train_examples = row["train_inputs"]
+    header = row["header"]
+    runner = RunTestFunc(test_func_str)
+    return interactive(model, runner, header, train_examples)
+
 
 @click.command()
 @click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
@@ -223,15 +230,18 @@ def run_interactive(dataset_name, model_name, save_name, override_gen):
             total=len(dataset),
             desc=f"Evaluating {dataset_name}",
         ):
-            test_func_str = row["test_func_validated"]
             true_description = row["description"]
-            examples = row["train_inputs"]
-            # TODO: Sort out train_output getting here too.
-            predicted_description, n_queries, concluded, step_df, all_examples = (
-                interactive(test_func_str, examples, model)
-            )
+            test_func_str = row["test_func_validated"]
+            predicted_description, n_queries, concluded, step_df, all_examples = get_interactive_from_row(model, row)
             steps = step_df.to_dict(orient="records")
-            repr_examples = repr(all_examples)
+            repr_examples = []
+            for suggested_input, output, error in all_examples:
+                try:
+                    repr_examples.append(
+                        (repr(suggested_input), repr(output), repr(error))
+                    )
+                except:
+                    continue
             data.append(
                 [
                     test_func_str,
@@ -285,12 +295,7 @@ def create_interactive_training_data(dataset_name, model_name, override_gen):
             total=len(dataset),
             desc=f"Evaluating {dataset_name}",
         ):
-            test_func_str = row["test_func_validated"]
-            true_description = row["description"]
-            examples = row["train_inputs"]
-            predicted_description, n_queries, concluded, step_df, all_examples = (
-                interactive(test_func_str, examples, model)
-            )
+            predicted_description, n_queries, concluded, step_df, all_examples = get_interactive_from_row(model, row)
             step_df = step_df[step_df["is_good"] == True]
             for _, step_row in step_df.iterrows():
                 data.append([step_row["prompt"], step_row["output"]])

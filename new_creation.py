@@ -773,7 +773,13 @@ def split_examples(dataset, n_train=2, min_test=4):
     log_info(
         f"Dropped {initial_length - final_length}/{initial_length} functions that could not be finalized with a train/test split of at least {n_train} train and {min_test} test examples."
     )
-    dataset["all_examples"] = dataset["train_examples"] # to simplify interactive vs incontext mode
+    dataset["all_examples"] = None
+    for idx, row in tqdm(
+        dataset.iterrows(), desc="Combining all examples into one column", total=len(dataset)
+    ):
+        train_examples = row["train_examples"]
+        prev_results = [(example[0], example[1], repr(None)) for example in train_examples]
+        dataset.at[idx, "all_examples"] = prev_results
     return dataset
 
 
