@@ -216,22 +216,18 @@ def run_interactive(dataset_name, model_name, save_name, override_gen):
         model = get_lm(model_name)
         dataset = get_dataset(dataset_name)
         columns = [
-            "test_func_validated",
-            "description",
             "n_queries",
             "concluded",
             "predicted_description",
             "steps",
-            "all_examples",
         ]
-        data = []
+        for column in columns:
+            dataset[column] = None
         for i, row in tqdm(
             dataset.iterrows(),
             total=len(dataset),
             desc=f"Evaluating {dataset_name}",
         ):
-            true_description = row["description"]
-            test_func_str = row["test_func_validated"]
             predicted_description, n_queries, concluded, step_df, all_examples = get_interactive_from_row(model, row)
             steps = step_df.to_dict(orient="records")
             repr_examples = []
@@ -242,20 +238,11 @@ def run_interactive(dataset_name, model_name, save_name, override_gen):
                     )
                 except:
                     continue
-            data.append(
-                [
-                    test_func_str,
-                    true_description,
-                    n_queries,
-                    concluded,
-                    predicted_description,
-                    steps,
-                    repr_examples,
-                ]
-            )
-        df = pd.DataFrame(data=data, columns=columns)
-        for column in df:
-            dataset[column] = df[column]
+            dataset.at[i, "predicted_description"] = predicted_description
+            dataset.at[i, "n_queries"] = n_queries
+            dataset.at[i, "concluded"] = concluded
+            dataset.at[i, "steps"] = steps
+            dataset.at[i, "all_examples"] = repr_examples
         dataset.to_json(save_path, orient="records", lines=True)
         log_info(f"Saved predictions to {save_path}")
     return save_path
@@ -418,9 +405,8 @@ def do_predict_code(
         true_description = None
         true_description = row["description"]
         predicted_description = row["predicted_description"]
-        test_func_str = row["test_func_validated"]
-        func_header = get_test_func_header(test_func_str)
-        examples_str = get_all_examples_str(row)  # TODO: Implement
+        func_header = row["header"]
+        examples_str = get_prev_results_str(row["all_examples"])
         if prediction_column == "prediction":
             use_description = predicted_description
         elif prediction_column == "true":
@@ -612,13 +598,9 @@ def do_predict_output(
     df = pd.read_json(prediction_file, orient="records", lines=True)
 
     def make_predict_output_prompt(row):
-        true_description = None
-        if "true_description" in row:
-            true_description = row["true_description"]
-        else:
-            true_description = row["description"]
+        true_description = row["description"]
         predicted_description = row["predicted_description"]
-        examples_str = get_all_examples_str(row)
+        examples_str = get_prev_results_str(row["all_examples"])
         if prediction_column not in ["prediction", "true"]:
             log_error(
                 f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'."
@@ -766,10 +748,7 @@ def do_predict_input(
     df = pd.read_json(prediction_file, orient="records", lines=True)
     df["target_outputs"] = None
     for i, row in df.iterrows():
-        if "description" in row:
-            true_description = row["description"]
-        else:
-            true_description = row["true_description"]
+        true_description = row["description"]
         func_code = row["test_func_validated"]
         test_inputs = row["test_inputs"]
         target_outputs = []
@@ -791,8 +770,7 @@ def do_predict_input(
         else:
             true_description = row["true_description"]
         description = row["predicted_description"]
-        test_func_str = row["test_func_validated"]
-        func_header = get_test_func_header(test_func_str)
+        func_header = row["header"]
         examples_str = get_all_examples_str(row)
         if prediction_column not in ["prediction", "true"]:
             log_error(
