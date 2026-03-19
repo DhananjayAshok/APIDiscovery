@@ -174,10 +174,6 @@ def get_prev_results_str(prev_results, max_previous_results):
     return results_str
 
 
-def get_in_context_prompt(func_header, previous_examples):
-    pass
-
-
 first_reasoning_prompt = f"""
 You are given a Python function with the following header:
 [HEADER]

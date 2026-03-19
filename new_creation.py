@@ -1,9 +1,10 @@
-from datasets import load_dataset
-from utils import model_factory, load_parameters, log_info, log_error, RunTestFunc
+from datasets import load_dataset, Dataset
+from utils import model_factory, load_parameters, log_info, log_error, RunTestFunc, get_prev_results_str
 from tqdm import tqdm
 import click
 import os
 import pandas as pd
+import numpy as np
 
 TEST_DATASETS = ["cruxeval", "mbpp", "humaneval"]
 TRAIN_DATASETS = ["code_alpaca", "magic_coder"]
@@ -27,6 +28,7 @@ test_func(arg0: List[float], arg1: float) -> bool:
 
     return False
 Validation Function: 
+```python
 def validate_input_args(arg0: List[float], arg1: float) -> None:
     if not isinstance(arg0, list):
         raise TypeError("arg0 must be a list")
@@ -36,8 +38,9 @@ def validate_input_args(arg0: List[float], arg1: float) -> None:
     if not isinstance(arg1, float):
         raise TypeError("arg1 must be a float")
     return     
+```
 [STOP]
-Function: 
+Test Function: 
 def test_func(arg0, arg1):
     \"\"\"
     Find the similar elements from the given two tuple lists.
@@ -53,7 +56,7 @@ def validate_input_args(arg0: tuple, arg1: tuple) -> None:
     return     
 [STOP]
 Now, generate the validate_input_args function for the following function only, from the def validate_input_args portion to the return line. Make sure to include type annotations on the function definition. After that, say [STOP]
-Function: 
+Test Function: 
 
 """
     example_creator = """
@@ -123,6 +126,17 @@ Note, avoid any mention the usage of the validate_input_args method even if it e
 Now, describe the following function only and then say [STOP]. It is extremely important you say [STOP] after the description. Do not just keep talking. 
 Function:
 
+"""
+    direct = """
+You are given a Python function with the following header:
+[HEADER]
+You have tried the following inputs to discover what this function does.
+
+[PREV]
+
+Based on this, describe what the function does in words. Respond in the format: Description: [your description here] [STOP] # make sure to put [STOP] after your description. 
+Now, provide your description for the function:
+Description: 
 """
 
 
@@ -591,15 +605,17 @@ def decode_shift(s: str):
 
 def get_validation_output(validation_func):
     validation_func = validation_func.strip()
+    validation_func = validation_func.strip(" ```python")
+    validation_func = validation_func.strip(" ```")
     if "return" in validation_func:
-        return validation_func.split("return")[-1].strip() + "\n"
+        return validation_func.split("return")[0].strip() + "\n"
     else:
         return validation_func + "\n"
 
 
 def create_validation_function(dataset, parameters):
     dataset["validation_prompt"] = dataset["revealed_func"].apply(
-        lambda x: Prompts.validation_creator + x + "\nValidation Function:\n"
+        lambda x: Prompts.validation_creator + x + "\nValidation Function:\n```python\n"
     )
     parameters = load_parameters(parameters)
     model_name = parameters["benchmark_creation_model"]
@@ -607,19 +623,23 @@ def create_validation_function(dataset, parameters):
     model = model_factory(
         model_name=model_name, model_kind="lm", model_engine=model_engine
     )
-    model["validation_func"] = None
-    model["test_func_validated"] = None
+    dataset["validation_func"] = None
+    dataset["test_func_validated"] = None
     for idx, row in tqdm(
         dataset.iterrows(), desc="Generating validation functions", total=len(dataset)
     ):
         prompt = row["validation_prompt"]
-        validation_func = model.infer(prompt, max_new_tokens=200)
-        dataset.at[idx, "validation_func"] = get_validation_output(validation_func)
+        try:
+            validation_func = model.infer(prompt, max_new_tokens=200)
+        except Exception as e:
+            validation_func = "None"
+        validation_func = get_validation_output(validation_func)
+        dataset.at[idx, "validation_func"] = validation_func
         dataset.at[idx, "test_func_validated"] = (
-            row["validation_func"] + "\n" + row["test_func"]
+            validation_func + "\n" + row["test_func"]
         )
         try:
-            runner = RunTestFunc(row["test_func_validated"])
+            runner = RunTestFunc(dataset.loc[idx, "test_func_validated"])
         except Exception as e:
             dataset.at[idx, "test_func_validated"] = None
     # drop any rows where test_func_validated is None
@@ -632,10 +652,193 @@ def create_validation_function(dataset, parameters):
     return dataset
 
 
+def parse_examples(examples_str):
+    examples = []
+    for line in examples_str.split("\n"):
+        line = line.strip()
+        if line.startswith("- "):
+            example = line[2:].strip()
+            examples.append(example)
+    return examples
+
 def create_examples(dataset, parameters):
-    # make sure to store the input output examples in separate columns as reprs with a try and except in case they cant be repred.
-    # also name this all_inputs and all_outputs so that code prediction can access them the same for interactive and ft
-    pass
+    dataset["example_prompt"] = dataset["test_func_validated"].apply(
+        lambda x: Prompts.example_creator + x + "\nReasoning:\n"
+    )
+    parameters = load_parameters(parameters)
+    model_name = parameters["benchmark_creation_model"]
+    model_engine = parameters["benchmark_creation_model_engine"]
+    model = model_factory(
+        model_name=model_name, model_kind="lm", model_engine=model_engine
+    )
+    dataset["examples"] = None
+    for idx, row in tqdm(
+        dataset.iterrows(), desc="Generating examples", total=len(dataset)
+    ):
+        prompt = row["example_prompt"]
+        try:
+            examples = model.infer(prompt, max_new_tokens=300)
+            inputs = parse_examples(examples)
+            working_inputs = []
+            outputs = []
+            runner = RunTestFunc(row["test_func_validated"])
+            for example in inputs:
+                output, err = runner.run_test_str(example)
+                if err is None:
+                    try:
+                        working_inputs.append(example)
+                        outputs.append(repr(output))
+                    except Exception as e:
+                        pass # repr might fail
+            if len(working_inputs) == 0:
+                dataset.at[idx, "examples"] = None
+            else:
+                dataset.at[idx, "examples"] = list(zip(working_inputs, outputs))
+        except Exception as e:
+            dataset.at[idx, "examples"] = None
+    initial_length = len(dataset)
+    dataset = dataset[~dataset["examples"].isna()].reset_index(drop=True)
+    final_length = len(dataset)
+    log_info(
+        f"Dropped {initial_length - final_length}/{initial_length} functions that could not have examples generated."
+    )
+    return dataset
+
+
+
+def train_test_split(examples, n_train=2):
+    # shuffle examples
+    np.random.shuffle(examples)
+    inputs  = [example[0] for example in examples]
+    outputs = [eval(example[1]) for example in examples]
+    train_inputs = []
+    train_outputs = []
+    test_inputs = []
+    test_outputs = []
+    for i in range(len(inputs)):
+        if len(train_inputs) >= n_train:
+            continue
+        if i == 0:
+            train_inputs.append(inputs[i])
+            train_outputs.append(outputs[i])
+        else:
+            candidate_input = inputs[i]
+            candidate_output = outputs[i]
+            # pass it over if the output is already in train outputs
+            if candidate_output in train_outputs:
+                test_inputs.append(candidate_input)
+                test_outputs.append(candidate_output)
+                continue
+            # pass it over if the existing train input has an identity mapping and this is also an identity mapping.
+            existing_identity = False
+            candidate_identity = False
+            try:  # might not be valid
+                for train_input, train_output in zip(train_inputs, train_outputs):
+                    if train_input == train_output:
+                        existing_identity = True
+                        break
+
+                if candidate_input == candidate_output:
+                    candidate_identity = True
+            except Exception as e:
+                pass
+            if existing_identity and candidate_identity:
+                test_inputs.append(candidate_input)
+                test_outputs.append(repr(candidate_output))
+            else:
+                train_inputs.append(candidate_input)
+                train_outputs.append(repr(candidate_output))
+    train_examples = list(zip(train_inputs, train_outputs))
+    test_examples = list(zip(test_inputs, test_outputs))
+    return train_examples, test_examples
+
+def split_examples(dataset, n_train=2, min_test=4):
+    dataset["train_examples"] = None
+    dataset["test_examples"] = None
+    for idx, row in tqdm(
+        dataset.iterrows(), desc="Finalizing dataset with train/test split", total=len(dataset)
+    ):
+        examples = row["examples"]
+        train_examples, test_examples = train_test_split(examples, n_train)
+        if len(train_examples) < n_train or len(test_examples) < min_test:
+            dataset.at[idx, "train_examples"] = None
+            dataset.at[idx, "test_examples"] = None
+        else:
+            dataset.at[idx, "train_examples"] = train_examples
+            dataset.at[idx, "test_examples"] = test_examples
+    initial_length = len(dataset)
+    dataset = dataset[~dataset["train_examples"].isna()].reset_index(drop=True)
+    dataset = dataset[~dataset["test_examples"].isna()].reset_index(drop=True)
+    final_length = len(dataset)
+    log_info(
+        f"Dropped {initial_length - final_length}/{initial_length} functions that could not be finalized with a train/test split of at least {n_train} train and {min_test} test examples."
+    )
+    dataset["all_examples"] = dataset["train_examples"] # to simplify interactive vs incontext mode
+    return dataset
+
+
+def remove_write_functions(dataset):
+    def new_items(existing):
+        current = set(os.listdir())
+        return list(current - existing)
+    for idx, row in tqdm(
+        dataset.iterrows(), desc="Removing functions that write to files", total=len(dataset)
+    ):
+        existing_files = set(os.listdir()) # get the files in the current directory to check against
+        func_code = row["test_func_validated"]
+        runner = RunTestFunc(func_code) # no try, this should always work since these functions have already been validated
+        new = new_items(existing_files)
+        if len(new) > 0:
+            dataset.at[idx, "test_func_validated"] = None
+    initial_length = len(dataset)
+    dataset = dataset[~dataset["test_func_validated"].isna()].reset_index(drop=True)
+    final_length = len(dataset)
+    log_info(
+        f"Dropped {initial_length - final_length}/{initial_length} functions that wrote to files."
+    )
+    return dataset
+
+
+def get_header(func_code):
+    if "def test_func(" not in func_code:
+        return None
+    header_start = func_code.index("def test_func(")
+    end_index = func_code.index("\n", header_start)
+    header = func_code[header_start:end_index].strip()
+    return header
+
+
+def add_header(dataset):
+    dataset["header"] = dataset["test_func_validated"].apply(get_header)
+    initial_length = len(dataset)
+    dataset = dataset[~dataset["header"].isna()].reset_index(drop=True)
+    final_length = len(dataset)
+    log_info(
+        f"Dropped {initial_length - final_length}/{initial_length} functions that did not have a valid header after validation."
+    )
+    return dataset
+
+
+def add_direct_prompt(dataset):
+    def create_direct_prompt(row):
+        header = row["header"]
+        prompt = Prompts.direct.replace("[HEADER]", header)
+        train_examples = row["train_examples"]
+        prev_results = [(example[0], example[1], None) for example in train_examples]
+        prev_str = get_prev_results_str(prev_results)
+        prompt = prompt.replace("[PREV]", prev_str)
+        return prompt
+    dataset["direct_prompt"] = dataset.apply(create_direct_prompt, axis=1)
+    return dataset
+
+
+def finalize_dataset(dataset):
+    dataset = split_examples(dataset)
+    dataset = remove_write_functions(dataset)
+    dataset = add_header(dataset)
+    dataset = add_direct_prompt(dataset)
+    return dataset
+
 
 
 @click.group()
@@ -677,7 +880,7 @@ def create_initial(dataset):
 def join_all():
     parameters = load_parameters()
     initial_path = parameters["data_dir"] + f"/benchmark_processing/initial/"
-    dfs = []
+    dfs = {"train": [], "test": []}
     get_split = lambda dataset: "train" if dataset in TRAIN_DATASETS else "test"
     for dataset in TRAIN_DATASETS + TEST_DATASETS:
         split = get_split(dataset)
@@ -689,16 +892,17 @@ def join_all():
             )
         df = pd.read_json(path, orient="records", lines=True)
         df["dataset"] = dataset
-        dfs.append(df)
-    all_df = pd.concat(dfs, ignore_index=True)
-    all_df.to_json(
-        parameters["data_dir"] + f"/benchmark_processing/all_{split}.jsonl",
-        orient="records",
-        lines=True,
-    )
-    log_info(
-        f"Saved all train data to {parameters['data_dir'] + f'/benchmark_processing/all_{split}.jsonl'}"
-    )
+        dfs[split].append(df)
+    for split in ["train", "test"]:
+        all_df = pd.concat(dfs[split], ignore_index=True)
+        all_df.to_json(
+            parameters["data_dir"] + f"/benchmark_processing/all_{split}.jsonl",
+            orient="records",
+            lines=True,
+        )
+        log_info(
+            f"Saved joint {len(all_df)} datapoints to {parameters['data_dir'] + f'/benchmark_processing/all_{split}.jsonl'}"
+        )
 
 
 def do_validation(split, parameters):
@@ -747,6 +951,42 @@ def do_example_creation(split, parameters):
     )
 
 
+def do_finalization(split, parameters):
+    load_path = (
+        parameters["data_dir"] + f"/benchmark_processing/validated_{split}_with_examples.jsonl"
+    )
+    save_path = (
+        parameters["data_dir"] + f"/benchmark_processing/finalized_{split}.jsonl"
+    )
+    if not os.path.exists(load_path):
+        log_error(
+            f"Validated with examples {split} file not found at {load_path}.",
+            parameters=parameters,
+        )
+    if os.path.exists(save_path):
+        log_info(
+            f"Finalized {split} file already exists at {save_path}, skipping finalization.",
+            parameters=parameters,
+        )
+        return
+    df = pd.read_json(load_path, orient="records", lines=True)
+    df = finalize_dataset(df)
+    df.to_json(save_path, orient="records", lines=True)
+    log_info(f"Saved finalized {split} data to {save_path}", parameters=parameters)
+
+def push_to_huggingface(split, parameters):
+    load_path = (
+        parameters["data_dir"] + f"/benchmark_processing/finalized_{split}.jsonl"
+    )
+    if not os.path.exists(load_path):
+        log_error(
+            f"Finalized {split} file not found at {load_path}.",
+            parameters=parameters,
+        )
+    df = pd.read_json(load_path, orient="records", lines=True)
+    dataset = Dataset.from_pandas(df)
+    dataset.push_to_hub(parameters["huggingface_repo_name"], split=split)
+
 @click.command()
 def validate_all():
     parameters = load_parameters()
@@ -761,10 +1001,24 @@ def create_examples_all():
     do_example_creation("test", parameters)
 
 
+@click.command()
+def finalize_all():
+    parameters = load_parameters()
+    do_finalization("train", parameters)
+    do_finalization("test", parameters)
+
+@click.command()
+def push_all():
+    parameters = load_parameters()
+    push_to_huggingface("train", parameters)
+    push_to_huggingface("test", parameters)
+
 cli.add_command(create_initial, name="initial")
 cli.add_command(join_all, "join")
 cli.add_command(validate_all, "validate")
 cli.add_command(create_examples_all, "examples")
+cli.add_command(finalize_all, "finalize")
+cli.add_command(push_all, "push")
 
 
 if __name__ == "__main__":
