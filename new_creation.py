@@ -1,5 +1,5 @@
 from datasets import load_dataset, Dataset
-from utils import model_factory, load_parameters, log_info, log_error, RunTestFunc, get_prev_results_str
+from utils import model_factory, load_parameters, log_info, log_error, RunTestFunc, get_prev_results_str, get_interactive_starting_prompt
 from tqdm import tqdm
 import click
 import os
@@ -831,12 +831,23 @@ def add_direct_prompt(dataset):
     dataset["direct_prompt"] = dataset.apply(create_direct_prompt, axis=1)
     return dataset
 
+def add_interactive_starting_prompt(dataset):
+    def create_interactive_prompt(row):
+        header = row["header"]
+        train_examples = row["train_examples"]
+        prev_results = [(example[0], example[1], None) for example in train_examples]
+        prompt = get_interactive_starting_prompt(header, prev_results)
+        return prompt
+    dataset["interactive_starting_prompt"] = dataset.apply(create_interactive_prompt, axis=1)
+    return dataset
+
 
 def finalize_dataset(dataset):
     dataset = split_examples(dataset)
     dataset = remove_write_functions(dataset)
     dataset = add_header(dataset)
     dataset = add_direct_prompt(dataset)
+    dataset = add_interactive_starting_prompt(dataset)
     return dataset
 
 
@@ -985,7 +996,10 @@ def push_to_huggingface(split, parameters):
         )
     df = pd.read_json(load_path, orient="records", lines=True)
     dataset = Dataset.from_pandas(df)
-    dataset.push_to_hub(parameters["huggingface_repo_name"], split=split)
+    username = parameters["huggingface_repo_namespace"]
+    reponame = parameters["huggingface_repo_name"]
+    repo = f"{username}/{reponame}"
+    dataset.push_to_hub(repo, split=split)
 
 @click.command()
 def validate_all():
