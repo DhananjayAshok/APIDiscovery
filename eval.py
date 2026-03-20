@@ -66,16 +66,15 @@ def score_description_predictions(
     *,
     predictions_save_path,
     save_name,
-    dataset_name,
     override_eval=False,
 ):
     parameters = load_parameters()
     model = parameters["evaluation_model_name"]
     model_save_name = model.split("/")[-1].strip()
     save_name = (
-        f"{save_name}_{dataset_name}_description_prediction_judge-{model_save_name}"
+        f"{save_name}_description_prediction_judge-{model_save_name}"
     )
-    evaluation_path = os.path.abspath(f"results/{dataset_name}/" + save_name + ".jsonl")
+    evaluation_path = os.path.abspath(f"results/evals/" + save_name + ".jsonl")
     skip = False
     if not override_eval:
         if os.path.exists(evaluation_path):
@@ -337,12 +336,6 @@ def score_input_prediction(predictions_save_path, override_eval=False):
 
 @click.command()
 @click.option(
-    "--dataset_name",
-    type=str,
-    required=True,
-    help="Name of the dataset.",
-)
-@click.option(
     "--save_name",
     type=str,
     default=None,
@@ -354,11 +347,10 @@ def score_input_prediction(predictions_save_path, override_eval=False):
     help="Whether to override existing evaluation results.",
 )
 def eval_description(
-    dataset_name,
     save_name,
     override_eval,
 ):
-    predictions_save_path = os.path.abspath(f"results/{dataset_name}/{save_name}.jsonl")
+    predictions_save_path = os.path.abspath(f"results/predictions/{save_name}.jsonl")
     if not os.path.exists(predictions_save_path):
         log_error(
             f"Predictions file not found at {predictions_save_path}. Run the generation script first."
@@ -366,7 +358,6 @@ def eval_description(
     score_description_predictions(
         predictions_save_path=predictions_save_path,
         save_name=save_name,
-        dataset_name=dataset_name,
         override_eval=override_eval,
     )
 
@@ -403,12 +394,6 @@ def get_code_save_name(save_name):
 
 @click.command()
 @click.option(
-    "--dataset_name",
-    type=str,
-    required=True,
-    help="Name of the dataset.",
-)
-@click.option(
     "--save_name",
     type=str,
     default=None,
@@ -420,12 +405,11 @@ def get_code_save_name(save_name):
     help="Whether to override existing evaluation results.",
 )
 def eval_code(
-    dataset_name,
     save_name,
     override_eval,
 ):
     save_name = get_code_save_name(save_name)
-    predictions_save_path = os.path.abspath(f"results/{dataset_name}/{save_name}.jsonl")
+    predictions_save_path = os.path.abspath(f"results/predictions/{save_name}.jsonl")
     if not os.path.exists(predictions_save_path):
         log_error(
             f"Predictions file not found at {predictions_save_path}. Run the generation script first."
@@ -438,12 +422,6 @@ def eval_code(
 
 @click.command()
 @click.option(
-    "--dataset_name",
-    type=str,
-    required=True,
-    help="Name of the dataset.",
-)
-@click.option(
     "--save_name",
     type=str,
     default=None,
@@ -455,12 +433,11 @@ def eval_code(
     help="Whether to override existing evaluation results.",
 )
 def eval_output(
-    dataset_name,
     save_name,
     override_eval,
 ):
     save_name = get_output_save_name(save_name)
-    predictions_save_path = os.path.abspath(f"results/{dataset_name}/{save_name}.jsonl")
+    predictions_save_path = os.path.abspath(f"results/predictions/{save_name}.jsonl")
     if not os.path.exists(predictions_save_path):
         log_error(
             f"Predictions file not found at {predictions_save_path}. Run the generation script first."
@@ -473,12 +450,6 @@ def eval_output(
 
 @click.command()
 @click.option(
-    "--dataset_name",
-    type=str,
-    required=True,
-    help="Name of the dataset.",
-)
-@click.option(
     "--save_name",
     type=str,
     default=None,
@@ -490,12 +461,11 @@ def eval_output(
     help="Whether to override existing evaluation results.",
 )
 def eval_input(
-    dataset_name,
     save_name,
     override_eval,
 ):
     save_name = get_input_save_name(save_name)
-    predictions_save_path = os.path.abspath(f"results/{dataset_name}/{save_name}.jsonl")
+    predictions_save_path = os.path.abspath(f"results/predictions/{save_name}.jsonl")
     if not os.path.exists(predictions_save_path):
         log_error(
             f"Predictions file not found at {predictions_save_path}. Run the generation script first."

@@ -21,8 +21,9 @@ import pandas as pd
 from tqdm import tqdm
 
 
-def get_save_paths(dataset_name, save_name):
-    results_dir = f"results/{dataset_name}/"
+def get_save_paths(save_name, parameters=None):
+    parameters = load_parameters(parameters)
+    results_dir = parameters["results_dir"] + "/predictions/"
     os.makedirs(results_dir, exist_ok=True)
     save_path = os.path.abspath(os.path.join(results_dir, f"{save_name}.jsonl"))
     return save_path
@@ -153,7 +154,6 @@ Hypothesis Conclusion: """
 
 
 @click.command()
-@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
 @click.option(
     "--save_name", type=str, default=None, help="Name to save the predictions under."
@@ -161,21 +161,18 @@ Hypothesis Conclusion: """
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def run_incontext(dataset_name, model_name, save_name, override_gen):
+def run_incontext(model_name, save_name, override_gen):
     parameters = load_parameters()
-    data_dir = parameters["data_dir"] + f"/final/{dataset_name}/"
     model_save_name = model_name.split("/")[-1].strip()
     save_name = model_save_name if save_name is None else save_name
-    save_path = get_save_paths(dataset_name, save_name)
-    file_makedir(save_path)
+    save_path = get_save_paths(save_name, parameters)
     if os.path.exists(save_path) and not override_gen:
         log_info(
             f"Output file {save_path} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
     else:
-        input_file = f"{data_dir}/test_filtered.jsonl"
         output_file = save_path
-        df = pd.read_json(input_file, orient="records", lines=True)
+        df = get_dataset("test", parameters=parameters)
         model = get_lm(model_name)
         for i, row in tqdm(df.iterrows(), total=len(df), desc="Running Inference"):
             df["predicted_description"] = model.infer(
@@ -194,7 +191,6 @@ def get_interactive_from_row(model, row):
 
 
 @click.command()
-@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
 @click.option(
     "--save_name", type=str, default=None, help="Name to save the predictions under."
@@ -202,11 +198,11 @@ def get_interactive_from_row(model, row):
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def run_interactive(dataset_name, model_name, save_name, override_gen):
+def run_interactive(model_name, save_name, override_gen):
     model_save_name = model_name.split("/")[-1].strip()
     if save_name is None:
         save_name = model_save_name
-    save_path = get_save_paths(dataset_name, save_name)
+    save_path = get_save_paths(save_name, parameters)
     file_makedir(save_path)
     if os.path.exists(save_path) and not override_gen:
         log_info(
@@ -214,7 +210,7 @@ def run_interactive(dataset_name, model_name, save_name, override_gen):
         )
     else:
         model = get_lm(model_name)
-        dataset = get_dataset(dataset_name)
+        dataset = get_dataset("test", parameters=parameters)
         columns = [
             "n_queries",
             "concluded",
@@ -249,7 +245,6 @@ def run_interactive(dataset_name, model_name, save_name, override_gen):
 
 
 @click.command()
-@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
 @click.option(
     "--sample_perc",
@@ -260,7 +255,7 @@ def run_interactive(dataset_name, model_name, save_name, override_gen):
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def create_interactive_training_data(dataset_name, model_name, override_gen):
+def create_interactive_training_data(model_name, override_gen):
     model_save_name = model_name.split("/")[-1].strip()
     if save_name is None:
         save_name = model_save_name
@@ -273,14 +268,14 @@ def create_interactive_training_data(dataset_name, model_name, override_gen):
             f"Output file {save_path} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
     else:
-        dataset = get_dataset(dataset_name)
+        dataset = get_dataset("train", parameters=parameters)
         model = get_lm(model_name)
         columns = ["input", "output"]
         data = []
         for i, row in tqdm(
             dataset.iterrows(),
             total=len(dataset),
-            desc=f"Evaluating {dataset_name}",
+            desc=f"Creating training data from {model_name}",
         ):
             predicted_description, n_queries, concluded, step_df, all_examples = get_interactive_from_row(model, row)
             step_df = step_df[step_df["is_good"] == True]
@@ -379,7 +374,6 @@ def get_code_model(model_name):
 
 def do_predict_code(
     model_name,
-    dataset_name,
     save_name,
     override_gen,
     prediction_column,
@@ -387,10 +381,10 @@ def do_predict_code(
 ):
     if load_name is None:
         load_name = save_name
-    prediction_file = get_save_paths(dataset_name, load_name)
+    prediction_file = get_save_paths(load_name)
     save_name = get_code_save_name(save_name)
     code_generation_model = get_code_model(model_name)
-    output_file = get_save_paths(dataset_name, save_name)
+    output_file = get_save_paths(save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
@@ -425,7 +419,6 @@ def do_predict_code(
     df["code_prediction_prompt"] = df.apply(make_code_prompt, axis=1)
     run_eval_code(
         model_name=code_generation_model,
-        dataset_name=dataset_name,
         save_name=save_name,
         override_gen=override_gen,
         input_file=input_file,
@@ -440,17 +433,15 @@ def do_predict_code(
 
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
-@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
 @click.option(
     "--save_name", type=str, default=None, help="Name to save the predictions under."
 )
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def predict_code(model_name, dataset_name, save_name, override_gen):
+def predict_code(model_name, save_name, override_gen):
     do_predict_code(
         model_name,
-        dataset_name,
         save_name,
         override_gen,
         prediction_column="prediction",
@@ -563,15 +554,15 @@ def get_output_model(model_name):
 
 
 def do_predict_output(
-    model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None
+    model_name, save_name, override_gen, prediction_column, load_name=None
 ):
     if load_name is None:
         load_name = save_name
 
-    prediction_file = get_save_paths(dataset_name, load_name)
+    prediction_file = get_save_paths(load_name)
     save_name = get_output_save_name(save_name)
     input_output_model = get_output_model(model_name)
-    output_file = get_save_paths(dataset_name, save_name)
+    output_file = get_save_paths(save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
@@ -685,14 +676,14 @@ def get_input_model(model_name):
 
 
 def do_predict_input(
-    model_name, dataset_name, save_name, override_gen, prediction_column, load_name=None
+    model_name, save_name, override_gen, prediction_column, load_name=None
 ):
     if load_name is None:
         load_name = save_name
-    prediction_file = get_save_paths(dataset_name, load_name)
+    prediction_file = get_save_paths(load_name)
     save_name = get_input_save_name(save_name)
     input_output_model = get_input_model(model_name)
-    output_file = get_save_paths(dataset_name, save_name)
+    output_file = get_save_paths(save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
@@ -764,17 +755,15 @@ def do_predict_input(
 
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
-@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
 @click.option(
     "--save_name", type=str, default=None, help="Name to save the predictions under."
 )
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def predict_output(model_name, dataset_name, save_name, override_gen):
+def predict_output(model_name, save_name, override_gen):
     do_predict_output(
         model_name,
-        dataset_name,
         save_name,
         override_gen,
         prediction_column="prediction",
@@ -783,17 +772,15 @@ def predict_output(model_name, dataset_name, save_name, override_gen):
 
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
-@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
 @click.option(
     "--save_name", type=str, default=None, help="Name to save the predictions under."
 )
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def predict_input(model_name, dataset_name, save_name, override_gen):
+def predict_input(model_name, save_name, override_gen):
     do_predict_input(
         model_name,
-        dataset_name,
         save_name,
         override_gen,
         prediction_column="prediction",
@@ -802,17 +789,15 @@ def predict_input(model_name, dataset_name, save_name, override_gen):
 
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
-@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
 @click.option(
     "--save_name", type=str, default=None, help="Name to save the predictions under."
 )
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def predict_gold_code(model_name, dataset_name, save_name, override_gen):
+def predict_gold_code(model_name, save_name, override_gen):
     do_predict_code(
         model_name,
-        dataset_name,
         "gold_" + save_name.split("_", 1)[1],
         override_gen,
         prediction_column="true",
@@ -822,17 +807,15 @@ def predict_gold_code(model_name, dataset_name, save_name, override_gen):
 
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
-@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
 @click.option(
     "--save_name", type=str, default=None, help="Name to save the predictions under."
 )
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def predict_gold_output(model_name, dataset_name, save_name, override_gen):
+def predict_gold_output(model_name, save_name, override_gen):
     do_predict_output(
         model_name,
-        dataset_name,
         "gold_" + save_name.split("_", 1)[1],
         override_gen,
         prediction_column="true",
@@ -842,17 +825,15 @@ def predict_gold_output(model_name, dataset_name, save_name, override_gen):
 
 @click.command()
 @click.option("--model_name", type=str, required=True, help="Name of the model to use.")
-@click.option("--dataset_name", type=str, required=True, help="Name of the dataset.")
 @click.option(
     "--save_name", type=str, default=None, help="Name to save the predictions under."
 )
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def predict_gold_input(model_name, dataset_name, save_name, override_gen):
+def predict_gold_input(model_name, save_name, override_gen):
     do_predict_input(
         model_name,
-        dataset_name,
         "gold_" + save_name.split("_", 1)[1],
         override_gen,
         prediction_column="true",
