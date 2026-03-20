@@ -10,7 +10,6 @@ declare -A ARGS
 # make optional arguments: b: batch_size, e: epochs
 ARGS["b"]=8   # -b default
 ARGS["e"]=5  # -e default
-ARGS["d"]="code_alpaca" # dataset_name
 
 
 
@@ -19,18 +18,17 @@ REQUIRED_ARGS=("m")
 
 # Help function
 usage() {
-    echo "Usage: $0 [-b <value>] [-e <value>] -d <value> -m <value>"
+    echo "Usage: $0 [-b <value>] [-e <value>] -m <value>"
     echo "  -b    Optional (default: ${ARGS["b"]})"
     echo "  -e    Optional (default: ${ARGS["e"]})"
-    echo "  -d    Required"
     echo "  -m    Required"
     exit 1
 }
 
 # Parse flags
-while getopts ":d:b:m:e:" opt; do
+while getopts ":b:m:e:" opt; do
     case $opt in
-        d|b|m|e)
+        b|m|e)
             ARGS["$opt"]="$OPTARG"
             ;;
         \?)
@@ -64,11 +62,12 @@ for key in "${!ARGS[@]}"; do
 done
 
 save_name="${ARGS["m"]#*/}"
-input_file="$storage_dir/data/final/${ARGS["d"]}/train_filtered.csv"
+input_file="$storage_dir/data/final/${ARGS["d"]}/train.csv"
+validation_file="$storage_dir/data/final/${ARGS["d"]}/val.csv"
 
 
 bash scripts/llm_utils.sh python train.py --training_kind sft --model_name ${ARGS["m"]} --output_dir $storage_dir/models/$save_name-${ARGS["d"]} \
-    --train_file $input_file  --input_column direct_prompt --output_column description --train_validation_split 0.8 \
+    --train_file $input_file --validation_file $validation_file --input_column direct_prompt --output_column description \
     --per_device_train_batch_size ${ARGS["b"]} --per_device_eval_batch_size ${ARGS["b"]} \
     --num_train_epochs ${ARGS["e"]} \
     --learning_rate 2e-5 \

@@ -183,10 +183,10 @@ def evaluate_code_predictions(true_code, predicted_code, test_inputs):
 
 def evaluate_output_prediction(true_output, predicted_output):
     try:
-        literal_eval(predicted_output)
+        RunTestFunc.timed_literal_eval(predicted_output)
     except:
         return None
-    return true_output == literal_eval(predicted_output)
+    return true_output == RunTestFunc.timed_literal_eval(predicted_output)
 
 
 def evaluate_input_prediction(true_code, target_output, predicted_input):
@@ -201,7 +201,7 @@ def evaluate_input_prediction(true_code, target_output, predicted_input):
     if pred_output is None and target_output is not None:
         return False, pred_output
     try:
-        target_output = eval(target_output)
+        target_output = RunTestFunc.timed_literal_eval(target_output)
     except:
         log_warn(
             f"Failed to eval target output: {target_output}. This can happen if the target output is not a valid Python expression. Treating this as a successful prediction."

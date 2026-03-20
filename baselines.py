@@ -175,7 +175,7 @@ def run_incontext(model_name, save_name, override_gen):
         df = get_dataset("test", parameters=parameters)
         model = get_lm(model_name)
         for i, row in tqdm(df.iterrows(), total=len(df), desc="Running Inference"):
-            df["predicted_description"] = model.infer(
+            df.loc[i, "predicted_description"] = model.infer(
                 row["direct_prompt"], max_new_tokens=300
             )
         df.to_json(output_file, orient="records", lines=True)
