@@ -27,7 +27,6 @@ if [ -z "$DATA_DIR" ]; then
   exit 1
 fi
 
-python baselines.py create
 bash scripts/warmup_rl.sh -m $trainer_policy_model -d $benchmark_creation_model
 trainer_policy_model=$storage_dir/models/rl_warmup/${trainer_policy_model#*/}/final_checkpoint
 

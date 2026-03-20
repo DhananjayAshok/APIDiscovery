@@ -11,7 +11,6 @@ models=("meta-llama/Meta-Llama-3-8B-Instruct" "Qwen/Qwen3-8B" "Qwen/Qwen3-32B")
 #models=("meta-llama/Meta-Llama-3-8B-Instruct")
 
 
-
 # First, train each model on the train dataset
 for model_name in "${models[@]}"; do
     echo "Training model: $model_name"

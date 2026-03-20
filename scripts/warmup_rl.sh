@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 source configs/config.env
+source setup/.venv/bin/activate
 if [[ -z "$storage_dir" ]]; then
     echo "Error: storage_dir is not set. Please set it in configs/config.env."
     exit 1
@@ -67,7 +68,7 @@ generation_model="${ARGS["d"]}"
 generation_save_name="${generation_model#*/}"
 input_file="$storage_dir/data/finetuning/${generation_save_name}.csv"
 
-
+python baselines.py create --model_name "$generation_model"
 bash scripts/llm_utils.sh python train.py --training_kind sft --model_name ${ARGS["m"]} --output_dir $storage_dir/models/rl_warmup/$save_name \
     --train_file $input_file --input_column input --output_column output --train_validation_split 0.85 \
     --per_device_train_batch_size ${ARGS["b"]} --per_device_eval_batch_size ${ARGS["b"]} \

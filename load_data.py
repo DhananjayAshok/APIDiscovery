@@ -23,7 +23,7 @@ def get_dataset(split, parameters=None, load_examples=True):
         dset["test_examples"] = dset["test_examples"].apply(json.loads)
         dset["all_examples"] = dset["all_examples"].apply(json.loads)
     if split == "debug":
-        dset = dset.sample(n=2, random_state=parameters["random_seed"]).reset_index(drop=True)
+        dset = dset.sample(n=10, random_state=parameters["random_seed"]).reset_index(drop=True)
     return dset
 
 
