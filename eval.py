@@ -7,6 +7,7 @@ from utils import (
     RunTestFunc,
     get_lm,
 )
+from load_data import get_dataset, save_dataset_df, load_dataset_df
 from tqdm import tqdm
 import pandas as pd
 import click
@@ -35,6 +36,8 @@ Now, provide your rating for the following description only. You absolutely must
 True Function Description: [TRUE]
 Hypothesized Description: [HYPOTHESIS]
 Explanation (very short):"""
+
+os.makedirs("results/evals", exist_ok=True)
 
 
 def parse_score(output):
@@ -82,9 +85,9 @@ def score_description_predictions(
                 f"Scored predictions already exist at {evaluation_path}, skipping judge generation."
             )
             skip = True
-            df = pd.read_json(evaluation_path, lines=True)
+            df = load_dataset_df(evaluation_path)
     if not skip:
-        df = pd.read_json(predictions_save_path, lines=True)
+        df = load_dataset_df(predictions_save_path)
 
         def get_score_prompt(row):
             description = None
@@ -109,10 +112,10 @@ def score_description_predictions(
             df.iterrows(), total=len(df), desc="Generating evaluation scores"
         ):
             prompt = row["score_prompt"]
-            output = model.generate(prompt)
+            output = model.infer(prompt, max_new_tokens=300)
             df.at[idx, "score_output"] = output
     df = parse_eval(df)
-    df.to_json(evaluation_path, orient="records", lines=True)
+    save_dataset_df(df, evaluation_path)
     if df is not None:
         avg_n_queries = df["n_queries"].mean()
         avg_score = df["score"].mean()
@@ -125,68 +128,43 @@ def score_description_predictions(
     log_info(f"Saved scored predictions to {evaluation_path}")
 
 
-def evaluate_code_predictions(true_code, predicted_code, test_inputs):
-    can_exec_true_code = False
+def evaluate_code_predictions(true_code, predicted_code, test_examples):
     can_exec_pred_code = False
-    true_outputs = []
+    test_inputs = [ex[0] for ex in test_examples]
+    true_outputs = [ex[1] for ex in test_examples]
     predicted_outputs = []
     exact_matches = []
     ret = [
-        can_exec_true_code,
         can_exec_pred_code,
-        true_outputs,
         predicted_outputs,
-        None,
+        0.0,
     ]
-    try:
-        runner = RunTestFunc(true_code)
-        ret[0] = True
-    except Exception as e:
-        log_warn(
-            f"Failed to initialize RunTestFunc with true code. Error: {str(e)}. This should not happen."
-        )
-        return ret
+    runner = RunTestFunc(true_code)
     if predicted_code is None:
         return ret
     try:
         pred_runner = RunTestFunc(predicted_code)
         ret[1] = True
-        ret[-1] = 0.0
     except Exception as e:
         return ret
-    for test_input in test_inputs:
-        true_output, true_error = runner.run_test_str(test_input)
+    for i, test_input in enumerate(test_inputs):
+        true_output = true_outputs[i]
         pred_output, pred_error = pred_runner.run_test_str(test_input)
-        true_outputs.append((true_output, true_error))
-        predicted_outputs.append((pred_output, pred_error))
-        if true_error is None and pred_error is None:
-            exact_matches.append(true_output == pred_output)
-        else:
-            exact_matches.append(False)
-    rep_true_outputs = []
-    for out, err in true_outputs:
-        try:
-            rep_true_outputs.append(repr(out))
-        except:
-            rep_true_outputs.append(repr(None))
+        predicted_outputs.append(pred_output)
+        exact_matches.append(true_output == pred_output)
     rep_pred_outputs = []
     for item in predicted_outputs:
         try:
-            rep_pred_outputs.append(repr(item[0]))
+            rep_pred_outputs.append(repr(item))
         except:
             rep_pred_outputs.append(repr(None))
-    ret[2] = rep_true_outputs
-    ret[3] = rep_pred_outputs
+    ret[1] = rep_pred_outputs
     ret[-1] = sum(exact_matches) / len(exact_matches) if len(exact_matches) > 0 else 0.0
     return ret
 
 
 def evaluate_output_prediction(true_output, predicted_output):
-    try:
-        RunTestFunc.timed_literal_eval(predicted_output)
-    except:
-        return None
-    return true_output == RunTestFunc.timed_literal_eval(predicted_output)
+    return true_output == RunTestFunc.timed_literal_eval(predicted_output)[0]
 
 
 def evaluate_input_prediction(true_code, target_output, predicted_input):
@@ -200,13 +178,6 @@ def evaluate_input_prediction(true_code, target_output, predicted_input):
     pred_output, pred_error = runner.run_test_str(predicted_input)
     if pred_output is None and target_output is not None:
         return False, pred_output
-    try:
-        target_output = RunTestFunc.timed_literal_eval(target_output)
-    except:
-        log_warn(
-            f"Failed to eval target output: {target_output}. This can happen if the target output is not a valid Python expression. Treating this as a successful prediction."
-        )
-        return True, pred_output
     if pred_output == target_output:
         return True, pred_output
     else:
@@ -214,7 +185,7 @@ def evaluate_input_prediction(true_code, target_output, predicted_input):
 
 
 def score_code(predictions_save_path, override_eval=False):
-    df = pd.read_json(predictions_save_path, lines=True)
+    df = load_dataset_df(predictions_save_path)
     if "predicted_code" not in df.columns:
         log_error(f"predicted_code not in df with columns: {df.columns}")
     if "true_test_outputs" in df.columns and not override_eval:
@@ -226,20 +197,16 @@ def score_code(predictions_save_path, override_eval=False):
     for idx, row in tqdm(df.iterrows(), total=len(df), desc="Scoring code predictions"):
         true_code = row["test_func_validated"]
         predicted_code = row["predicted_code"]
-        test_inputs = row["test_inputs"]
+        test_examples = row["test_examples"]
         (
-            can_exec_true_code,
             can_exec_pred_code,
-            true_outputs,
             predicted_outputs,
             exact_match,
-        ) = evaluate_code_predictions(true_code, predicted_code, test_inputs)
-        df.at[idx, "can_exec_true_code"] = can_exec_true_code
+        ) = evaluate_code_predictions(true_code, predicted_code, test_examples)
         df.at[idx, "can_exec_pred_code"] = can_exec_pred_code
-        df.at[idx, "true_test_outputs"] = true_outputs
         df.at[idx, "predicted_test_outputs"] = predicted_outputs
         df.at[idx, "predicted_outputs_exact_match"] = exact_match
-    df.to_json(predictions_save_path, orient="records", lines=True)
+    save_dataset_df(df, predictions_save_path)
     log_info(f"Saved scored predictions to {predictions_save_path}")
     log_info(
         f"Average exact match on test outputs: {df['predicted_outputs_exact_match'].mean()} +- {df['predicted_outputs_exact_match'].std()}"
@@ -247,7 +214,7 @@ def score_code(predictions_save_path, override_eval=False):
 
 
 def score_output_prediction(predictions_save_path, override_eval=False):
-    df = pd.read_json(predictions_save_path, lines=True)
+    df = load_dataset_df(predictions_save_path)
     if "predicted_output" not in df.columns:
         log_error(f"predicted_output not in df with columns: {df.columns}")
     if "output_prediction_correct_micro" in df.columns and not override_eval:
@@ -260,19 +227,8 @@ def score_output_prediction(predictions_save_path, override_eval=False):
         df.iterrows(), total=len(df), desc="Scoring output predictions"
     ):
         test_func_code = row["test_func_validated"]
-        test_inputs = row["test_inputs"]
-        true_output = []
-        try:
-            runner = RunTestFunc(test_func_code)
-        except Exception as e:
-            log_warn(
-                f"Failed to initialize RunTestFunc with true code. Error: {str(e)}. This should never happen."
-            )
-            df.at[idx, "output_prediction_correct_micro"] = 1.0
-            continue
-        for test_input in test_inputs:
-            output, error = runner.run_test_str(test_input)
-            true_output.append(output)
+        test_examples = row["test_examples"]
+        true_output = [ex[1] for ex in test_examples]
         predicted_outputs = row["predicted_output"]
         matches = []
         for idx2, (predicted_output, true_out) in enumerate(
@@ -287,7 +243,7 @@ def score_output_prediction(predictions_save_path, override_eval=False):
         df.at[idx, "output_prediction_correct_micro"] = (
             sum(matches) / len(matches) if len(matches) > 0 else 0.0
         )
-    df.to_json(predictions_save_path, orient="records", lines=True)
+    save_dataset_df(df, predictions_save_path)
     log_info(f"Saved scored predictions to {predictions_save_path}")
     log_info(
         f"Average micro accuracy on output predictions: {df['output_prediction_correct_micro'].mean()} +- {df['output_prediction_correct_micro'].std()}"
@@ -295,7 +251,7 @@ def score_output_prediction(predictions_save_path, override_eval=False):
 
 
 def score_input_prediction(predictions_save_path, override_eval=False):
-    df = pd.read_json(predictions_save_path, lines=True)
+    df = load_dataset_df(predictions_save_path)
     if "predicted_input" not in df.columns:
         log_error(f"predicted_input not in df with columns: {df.columns}")
     if "input_prediction_correct_micro" in df.columns and not override_eval:
@@ -308,7 +264,7 @@ def score_input_prediction(predictions_save_path, override_eval=False):
         df.iterrows(), total=len(df), desc="Scoring input predictions"
     ):
         true_code = row["test_func_validated"]
-        target_output = row["target_outputs"]
+        target_output = [ex[1] for ex in row["test_examples"]]
         predicted_input = row["predicted_input"]
         if predicted_input is None:
             df.at[idx, "input_prediction_correct_micro"] = 0.0
@@ -327,7 +283,7 @@ def score_input_prediction(predictions_save_path, override_eval=False):
         df.at[idx, "input_prediction_exact_match_micro"] = (
             sum(matches) / len(matches) if len(matches) > 0 else 0.0
         )
-    df.to_json(predictions_save_path, orient="records", lines=True)
+    save_dataset_df(df, predictions_save_path)
     log_info(f"Saved scored predictions to {predictions_save_path}")
     log_info(
         f"Average micro accuracy on input predictions: {df['input_prediction_exact_match_micro'].mean()} +- {df['input_prediction_exact_match_micro'].std()}"

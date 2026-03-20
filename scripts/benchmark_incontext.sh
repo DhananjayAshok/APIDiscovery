@@ -9,7 +9,7 @@ echo "Evaluation model: $evaluation_model_save_name"
 models=("meta-llama/Meta-Llama-3-8B-Instruct" "gpt-4o-mini" "Qwen/Qwen3-8B" "Qwen/Qwen3-32B" "gpt-4o")
 #models=("gpt-4o")
 #models=("Qwen/Qwen3-8B")
-#models=("meta-llama/Meta-Llama-3-8B-Instruct")
+models=("meta-llama/Meta-Llama-3-8B-Instruct")
 
 
 for model_name in "${models[@]}"; do
@@ -20,17 +20,17 @@ for model_name in "${models[@]}"; do
     python eval.py description --save_name $save_name # --override_eval,
     evaluation_output_file=results/$dataset_name/$save_name"_scored_"$evaluation_model_save_name".jsonl"
     python baselines.py code  --model_name $model_name --save_name "$save_name" # --override_gen
-    python eval.py code --dataset_name $dataset_name --save_name $save_name # --override_eval
+    python eval.py code  --save_name $save_name # --override_eval
     python baselines.py output  --model_name $model_name --save_name "$save_name" # --override_gen
-    python eval.py output --dataset_name $dataset_name --save_name $save_name # --override_eval        
+    python eval.py output  --save_name $save_name # --override_eval        
     python baselines.py input  --model_name $model_name --save_name "$save_name" #--override_gen
-    python eval.py input --dataset_name $dataset_name --save_name $save_name #--override_eval           
+    python eval.py input  --save_name $save_name #--override_eval           
 
     gold_name="gold_$model_save_name"
     python baselines.py gold_code  --model_name $model_name --save_name "$save_name" # --override_gen
-    python eval.py code --dataset_name $dataset_name --save_name $gold_name # --override_eval
+    python eval.py code  --save_name $gold_name # --override_eval
     python baselines.py gold_output  --model_name $model_name --save_name "$save_name" # --override_gen
-    python eval.py output --dataset_name $dataset_name --save_name $gold_name # --override_eval        
+    python eval.py output  --save_name $gold_name # --override_eval        
     python baselines.py gold_input  --model_name $model_name --save_name "$save_name" # --override_gen
-    python eval.py input --dataset_name $dataset_name --save_name $gold_name # --override_eval                                     
+    python eval.py input  --save_name $gold_name # --override_eval                                     
 done

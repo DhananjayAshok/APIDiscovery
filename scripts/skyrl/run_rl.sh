@@ -3,6 +3,8 @@
 # export WANDB_API_KEY=<your_key_here>
 # bash examples/multiply/run_multiply.sh
 
+source configs/config.env
+source setup/.venv/bin/activate
 
 if [ -z "$storage_dir" ]; then
   echo "Error: storage_dir is not set"
@@ -25,8 +27,14 @@ if [ -z "$DATA_DIR" ]; then
   exit 1
 fi
 
-trainer_ckpt_path=$storage_dir/models/$run_name/ckpt
-trainer_export_path=$storage_dir/models/$run_name/final_checkpoint/
+python baselines.py create
+bash scripts/warmup_rl.sh -m $trainer_policy_model -d $benchmark_creation_model
+trainer_policy_model=$storage_dir/models/rl_warmup/${trainer_policy_model#*/}/final_checkpoint
+
+trainer_ckpt_path=$storage_dir/models/rl/$run_name/ckpt
+trainer_export_path=$storage_dir/models/rl/$run_name/final_checkpoint/
+
+
 
 source $skyrl_env_dir/bin/activate || { echo "Failed to activate virtual environment at $skyrl_env_dir. Check that the path is correct and that the virtual environment is set up properly."; exit 1; }
 uv pip install torch-c-dlpack-ext

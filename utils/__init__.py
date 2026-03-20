@@ -72,10 +72,21 @@ class RunTestFunc:
             queue.put(False)  # fails
 
     @staticmethod
+    def eval_worker(expr, queue):
+        """Helper worker to run eval and put the result in a queue."""
+        try:
+            result = eval(expr, {"__builtins__": __builtins__})
+            queue.put((True, result))  # success
+        except Exception as e:
+            queue.put((False, str(e)))  # failure
+
+    @staticmethod
     def timed_literal_eval(expr, timeout=0.5):
         """Evaluates a Python expression with a timeout."""
         queue = multiprocessing.Queue()
-        p = multiprocessing.Process(target=literal_eval, args=(expr,))
+        if not isinstance(expr, str):
+            return expr, True
+        p = multiprocessing.Process(target=RunTestFunc.eval_worker, args=(expr, queue))
         p.start()
         p.join(timeout=timeout)
         if p.is_alive():

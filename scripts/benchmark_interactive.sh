@@ -14,7 +14,7 @@ models=("meta-llama/Meta-Llama-3-8B-Instruct" "Qwen/Qwen3-32B" "gpt-4o-mini" "gp
 for model_name in "${models[@]}"; do
     model_save_name="${model_name#*/}"
     save_name="interactive_$model_save_name"
-    echo "Testing: $save_name on dataset: $dataset_name"
+    echo "Testing: $save_name "
     python baselines.py interactive  --model_name "$model_name" --save_name "$save_name" # --override_gen
     python eval.py description   --save_name $save_name # --override_eval
     #evaluation_output_file=results/$dataset_name/$save_name"_scored_"$evaluation_model_save_name".jsonl"

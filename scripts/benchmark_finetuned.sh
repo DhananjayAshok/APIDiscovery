@@ -22,10 +22,10 @@ done
 
 for model_name in "${models[@]}"; do
     model_save_name="${model_name#*/}"
-    ft_model="$storage_dir/models/${model_save_name}"
+    ft_model="$storage_dir/models/ft/${model_save_name}"
     save_name="ft_${model_save_name}"
     echo "Testing: $save_name" 
-    python baselines.py finetuned  --model_name "$ft_model/final_checkpoint" --save_name "$save_name" #--override_gen
+    python baselines.py incontext  --model_name "$ft_model/final_checkpoint" --save_name "$save_name" #--override_gen
     python eval.py description   --save_name $save_name # --override_eval,
     #evaluation_output_file=results/$dataset_name/$save_name"_scored_"$evaluation_model_save_name".jsonl"
     python baselines.py code  --model_name $model_name --save_name "$save_name" #--override_gen

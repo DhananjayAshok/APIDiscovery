@@ -10,6 +10,7 @@ declare -A ARGS
 # make optional arguments: b: batch_size, e: epochs
 ARGS["b"]=8   # -b default
 ARGS["e"]=5  # -e default
+ARGS["d"]="gpt-4o-mini" # -d name of the model to use for generating interactive training data, default gpt-4o-mini
 
 
 
@@ -62,12 +63,13 @@ for key in "${!ARGS[@]}"; do
 done
 
 save_name="${ARGS["m"]#*/}"
-input_file="$storage_dir/data/csvs/train.csv"
-validation_file="$storage_dir/data/csvs/val.csv"
+generation_model="${ARGS["d"]}"
+generation_save_name="${generation_model#*/}"
+input_file="$storage_dir/data/finetuning/${generation_save_name}.csv"
 
 
-bash scripts/llm_utils.sh python train.py --training_kind sft --model_name ${ARGS["m"]} --output_dir $storage_dir/models/ft/$save_name \
-    --train_file $input_file --validation_file $validation_file --input_column direct_prompt --output_column description \
+bash scripts/llm_utils.sh python train.py --training_kind sft --model_name ${ARGS["m"]} --output_dir $storage_dir/models/rl_warmup/$save_name \
+    --train_file $input_file --input_column input --output_column output --train_validation_split 0.85 \
     --per_device_train_batch_size ${ARGS["b"]} --per_device_eval_batch_size ${ARGS["b"]} \
     --num_train_epochs ${ARGS["e"]} \
     --learning_rate 2e-5 \
@@ -76,4 +78,4 @@ bash scripts/llm_utils.sh python train.py --training_kind sft --model_name ${ARG
     --save_strategy epoch --save_steps 0.5 \
     --early_stopping_patience 3 \
     --load_best_model_at_end True \
-    --run_name ft-$save_name
+    --run_name rl_warmup-$save_name

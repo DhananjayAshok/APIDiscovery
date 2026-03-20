@@ -16,7 +16,7 @@ from utils import (
 )
 from eval import get_output_save_name, get_code_save_name, get_input_save_name
 import click
-from load_data import get_dataset
+from load_data import get_dataset, save_dataset_df, load_dataset_df
 import pandas as pd
 from tqdm import tqdm
 
@@ -172,19 +172,19 @@ def run_incontext(model_name, save_name, override_gen):
         )
     else:
         output_file = save_path
-        df = get_dataset("test", parameters=parameters)
+        df = get_dataset("debug" if parameters["debug"] else "test", parameters=parameters)
         model = get_lm(model_name)
         for i, row in tqdm(df.iterrows(), total=len(df), desc="Running Inference"):
             df.loc[i, "predicted_description"] = model.infer(
                 row["direct_prompt"], max_new_tokens=300
             )
-        df.to_json(output_file, orient="records", lines=True)
+        save_dataset_df(df, output_file)
         log_info(f"Saved predictions to {output_file}")
         return
 
 def get_interactive_from_row(model, row):
     test_func_str = row["test_func_validated"]
-    train_examples = row["train_inputs"]
+    train_examples = row["train_examples"]
     header = row["header"]
     runner = RunTestFunc(test_func_str)
     return interactive(model, runner, header, train_examples)
@@ -199,10 +199,11 @@ def get_interactive_from_row(model, row):
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def run_interactive(model_name, save_name, override_gen):
+    parameters = load_parameters()
     model_save_name = model_name.split("/")[-1].strip()
     if save_name is None:
         save_name = model_save_name
-    save_path = get_save_paths(save_name, parameters)
+    save_path = get_save_paths(save_name)
     file_makedir(save_path)
     if os.path.exists(save_path) and not override_gen:
         log_info(
@@ -210,7 +211,7 @@ def run_interactive(model_name, save_name, override_gen):
         )
     else:
         model = get_lm(model_name)
-        dataset = get_dataset("test", parameters=parameters)
+        dataset = get_dataset("debug" if parameters["debug"] else "test", parameters=parameters)
         columns = [
             "n_queries",
             "concluded",
@@ -222,7 +223,7 @@ def run_interactive(model_name, save_name, override_gen):
         for i, row in tqdm(
             dataset.iterrows(),
             total=len(dataset),
-            desc=f"Evaluating {dataset_name}",
+            desc=f"Evaluating {save_name}",
         ):
             predicted_description, n_queries, concluded, step_df, all_examples = get_interactive_from_row(model, row)
             steps = step_df.to_dict(orient="records")
@@ -239,13 +240,13 @@ def run_interactive(model_name, save_name, override_gen):
             dataset.at[i, "concluded"] = concluded
             dataset.at[i, "steps"] = steps
             dataset.at[i, "all_examples"] = repr_examples
-        dataset.to_json(save_path, orient="records", lines=True)
+        save_dataset_df(dataset, save_path)
         log_info(f"Saved predictions to {save_path}")
     return save_path
 
 
 @click.command()
-@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
+@click.option("--model_name", type=str, default=None, help="Name of the model to use.")
 @click.option(
     "--sample_perc",
     type=float,
@@ -255,20 +256,21 @@ def run_interactive(model_name, save_name, override_gen):
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def create_interactive_training_data(model_name, override_gen):
-    model_save_name = model_name.split("/")[-1].strip()
-    if save_name is None:
-        save_name = model_save_name
+def create_interactive_training_data(model_name, sample_perc, override_gen):
     parameters = load_parameters()
+    if model_name is None:
+        model_name = parameters["benchmark_creation_model"]
+    model_save_name = model_name.split("/")[-1].strip()
     save_path = (
-        parameters["data_dir"] + f"/finetuning/{dataset_name}/{model_save_name}.csv"
+        parameters["data_dir"] + f"/finetuning/{model_save_name}.csv"
     )
     if os.path.exists(save_path) and not override_gen:
         log_info(
             f"Output file {save_path} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
     else:
-        dataset = get_dataset("train", parameters=parameters)
+        dataset = get_dataset("debug" if parameters["debug"] else "train", parameters=parameters)
+        dataset = dataset.sample(frac=sample_perc, random_state=parameters["random_seed"]).reset_index(drop=True)
         model = get_lm(model_name)
         columns = ["input", "output"]
         data = []
@@ -282,7 +284,7 @@ def create_interactive_training_data(model_name, override_gen):
             for _, step_row in step_df.iterrows():
                 data.append([step_row["prompt"], step_row["output"]])
         df = pd.DataFrame(data=data, columns=columns)
-        df.to_csv(save_path, orient="records", lines=True)
+        df.to_csv(save_path, index=False)
         log_info(f"Saved finetuning data to {save_path}")
     return save_path
 
@@ -309,9 +311,8 @@ Reasoning:
 """
 
 
-def run_eval_code(
+def run_extract_code(
     model_name: str,
-    input_file: str,
     output_file: str,
     override_gen: bool,
     df: pd.DataFrame,
@@ -323,7 +324,6 @@ def run_eval_code(
     Common function for running code prediction evaluation.
     Takes a DataFrame with prompts, runs inference, extracts code, and saves results.
     """
-    df.to_json(input_file, orient="records", lines=True)
     if os.path.exists(output_file) and not override_gen:
         log_info(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
@@ -344,8 +344,14 @@ def run_eval_code(
             code_part = response.split("[STOP]")[0]
         else:
             code_part = response
-        if "```python" in code_part and "```" in code_part:
+        if "```python" in code_part and "```" in code_part.split("```python")[-1]:
             code = code_part.split("```python")[1].split("```")[0].strip()
+            return code
+        elif code_part.count("```") == 2:
+            code = code_part.split("```")[1].strip()
+            return code
+        elif code_part.count("```") == 1:
+            code = code_part.split("```")[1].strip()
             return code
         else:
             return None
@@ -357,7 +363,7 @@ def run_eval_code(
             df.at[i, "predicted_code"] = code
         else:
             parse_errors += 1
-    df.to_json(output_file, orient="records", lines=True)
+    save_dataset_df(df, output_file)
     log_info(
         f"Saved predicted code to {output_file} | Parse errors: {parse_errors}/{len(df)}"
     )
@@ -390,9 +396,7 @@ def do_predict_code(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
         return
-    input_file = output_file.replace(".jsonl", "_input.jsonl")
-    intermediate_file = output_file.replace(".jsonl", "_intermediate.jsonl")
-    df = pd.read_json(prediction_file, orient="records", lines=True)
+    df = load_dataset_df(prediction_file)
 
     def make_code_prompt(row):
         true_description = None
@@ -417,13 +421,10 @@ def do_predict_code(
         return prompt
 
     df["code_prediction_prompt"] = df.apply(make_code_prompt, axis=1)
-    run_eval_code(
+    run_extract_code(
         model_name=code_generation_model,
-        save_name=save_name,
         override_gen=override_gen,
-        input_file=input_file,
         output_file=output_file,
-        intermediate_file=intermediate_file,
         df=df,
         prompt_column="code_prediction_prompt",
         output_column="predicted_code_output",
@@ -487,7 +488,7 @@ Reasoning:
 """
 
 
-def run_eval_output(
+def run_predict_output(
     model_name: str,
     output_file: str,
     df: pd.DataFrame,
@@ -504,8 +505,9 @@ def run_eval_output(
         log_info(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
-        return pd.read_json(output_file, orient="records", lines=True)
+        return load_dataset_df(output_file)
     df["original_index"] = df.index
+    df = df.reset_index(drop=True)
     model = get_lm(model_name)
     for i, row in tqdm(df.iterrows(), total=len(df), desc="Generating Output Predictions"):
         prompt = row[prompt_column]
@@ -526,7 +528,6 @@ def run_eval_output(
             return expected_output
         else:
             return None
-
     parse_errors = 0
     df["predicted_output"] = None
     for i, row in df.iterrows():
@@ -536,9 +537,9 @@ def run_eval_output(
         else:
             parse_errors += 1
     df = df.groupby(df["original_index"]).agg({"predicted_output": list}).reset_index()
-    original_df = pd.read_json(prediction_file, orient="records", lines=True)
+    original_df = load_dataset_df(prediction_file)
     original_df["predicted_output"] = df["predicted_output"]
-    original_df.to_json(output_file, orient="records", lines=True)
+    save_dataset_df(original_df, output_file)
     log_info(
         f"Saved predicted outputs to {output_file} | Parse errors: {parse_errors}/{len(df)}"
     )
@@ -568,7 +569,7 @@ def do_predict_output(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
         return
-    df = pd.read_json(prediction_file, orient="records", lines=True)
+    df = load_dataset_df(prediction_file)
 
     def make_predict_output_prompt(row):
         true_description = row["description"]
@@ -590,14 +591,14 @@ def do_predict_output(
 
     df["predict_output_prompt"] = df.apply(make_predict_output_prompt, axis=1)
     # now we need to explode the dataframe so that we have one row per example input-output pair, since we want to predict the output for each example input separately
-    df = df.explode("test_inputs")
+    df = df.explode("test_examples")
     df["predict_output_prompt"] = df.apply(
         lambda row: row["predict_output_prompt"].replace(
-            "[INPUT]", f"{row['test_inputs']}"
+            "[INPUT]", f"{row['test_examples'][0]}"
         ),
         axis=1,
     )
-    run_eval_output(
+    run_predict_output(
         model_name=input_output_model,
         output_file=output_file,
         df=df,
@@ -609,14 +610,13 @@ def do_predict_output(
     )
 
 
-def run_eval_input(
+def run_predict_input(
     model_name: str,
     override_gen: bool,
     output_file: str,
     df: pd.DataFrame,
     prompt_column: str,
     prediction_file: str,
-    target_outputs: pd.Series,
     output_column: str = "predicted_input_output",
     max_new_tokens: int = 300,
 ):
@@ -624,6 +624,7 @@ def run_eval_input(
     Common function for running input prediction evaluation.
     """
     df["original_index"] = df.index
+    df = df.reset_index(drop=True)
     model = get_lm(model_name)
     for i, row in tqdm(df.iterrows(), total=len(df), desc="Generating Input Predictions"):
         prompt = row[prompt_column]
@@ -657,10 +658,9 @@ def run_eval_input(
         else:
             parse_errors += 1
     df = df.groupby(df["original_index"]).agg({"predicted_input": list}).reset_index()
-    original_df = pd.read_json(prediction_file, orient="records", lines=True)
+    original_df = load_dataset_df(prediction_file)
     original_df["predicted_input"] = df["predicted_input"]
-    original_df["target_outputs"] = target_outputs
-    original_df.to_json(output_file, orient="records", lines=True)
+    save_dataset_df(original_df, output_file)
     log_info(
         f"Saved predicted inputs to {output_file} | Parse errors: {parse_errors}/{len(df)}"
     )
@@ -689,30 +689,10 @@ def do_predict_input(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
         return
-    df = pd.read_json(prediction_file, orient="records", lines=True)
-    df["target_outputs"] = None
-    for i, row in df.iterrows():
-        true_description = row["description"]
-        func_code = row["test_func_validated"]
-        test_inputs = row["test_inputs"]
-        target_outputs = []
-        try:
-            runner = RunTestFunc(func_code)
-            for test_input in test_inputs:
-                ret, err = runner.run_test_str(test_input)
-                target_outputs.append(repr(ret))
-        except:
-            log_warn(
-                f"Could not run test function for row with description: {true_description}. This should never happen."
-            )
-            continue
-        df.at[i, "target_outputs"] = target_outputs
+    df = load_dataset_df(prediction_file)
 
     def make_predict_input_prompt(row):
-        if "description" in row:
-            true_description = row["description"]
-        else:
-            true_description = row["true_description"]
+        true_description = row["description"]
         description = row["predicted_description"]
         func_header = row["header"]
         examples_str = get_prev_results_str(row["all_examples"])
@@ -732,22 +712,20 @@ def do_predict_input(
 
     df["predict_input_prompt"] = df.apply(make_predict_input_prompt, axis=1)
     # explode and use target_outputs as the new output to predict the input for
-    target_outputs = df["target_outputs"]
-    df = df.explode("target_outputs")
+    df = df.explode("test_examples")
     df["predict_input_prompt"] = df.apply(
         lambda row: row["predict_input_prompt"].replace(
-            "[OUTPUT]", f"{row['target_outputs']}"
+            "[OUTPUT]", f"{row['test_examples'][1]}"
         ),
         axis=1,
     )
-    run_eval_input(
+    run_predict_input(
         model_name=input_output_model,
         override_gen=override_gen,
         output_file=output_file,
         df=df,
         prompt_column="predict_input_prompt",
         prediction_file=prediction_file,
-        target_outputs=target_outputs,
         output_column="predicted_input_output",
         max_new_tokens=300,
     )
@@ -854,6 +832,7 @@ cli.add_command(predict_input, name="input")
 cli.add_command(predict_gold_code, name="gold_code")
 cli.add_command(predict_gold_output, name="gold_output")
 cli.add_command(predict_gold_input, name="gold_input")
+cli.add_command(create_interactive_training_data, name="create")
 
 
 if __name__ == "__main__":

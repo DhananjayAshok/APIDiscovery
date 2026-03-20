@@ -4,6 +4,8 @@ import click
 from datasets import load_dataset
 import json
 import os
+import pandas as pd
+from creation import robust_serialize
 
 loaded_parameters = load_parameters()
 
@@ -12,15 +14,34 @@ def get_dataset(split, parameters=None, load_examples=True):
     parameters = load_parameters()
     username = parameters["huggingface_repo_namespace"]
     reponame = parameters["huggingface_repo_name"]
+    use_split = "test" if split == "debug" else split
     dset = load_dataset(
-        f"{username}/{reponame}", split=split
+        f"{username}/{reponame}", split=use_split
     ).to_pandas()
     if load_examples:
         dset["train_examples"] = dset["train_examples"].apply(json.loads)
         dset["test_examples"] = dset["test_examples"].apply(json.loads)
         dset["all_examples"] = dset["all_examples"].apply(json.loads)
+    if split == "debug":
+        dset = dset.sample(n=2, random_state=parameters["random_seed"]).reset_index(drop=True)
     return dset
 
+
+def save_dataset_df(df, save_path):
+    os.makedirs(os.path.dirname(save_path), exist_ok=True)
+    for column in ["train_examples", "test_examples", "all_examples", "predicted_input", "predicted_output"]:
+        if column in df.columns:
+            df[column] = df[column].apply(robust_serialize)
+    df.to_json(save_path, orient="records", lines=True)
+    log_info(f"Saved dataset to {save_path}")
+
+def load_dataset_df(path, deserialize_examples=True):
+    df = pd.read_json(path, orient="records", lines=True)
+    if deserialize_examples:
+        for column in ["train_examples", "test_examples", "all_examples", "predicted_input", "predicted_output"]:
+            if column in df.columns:
+                df[column] = df[column].apply(json.loads)
+    return df
 
 
 @click.command()
