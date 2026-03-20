@@ -2,19 +2,23 @@ from utils.parameter_handling import load_parameters
 from utils import log_error, log_info, log_warn
 import click
 from datasets import load_dataset
+import json
+import os
 
 loaded_parameters = load_parameters()
 
 
-def get_dataset(split, parameters=None):
+def get_dataset(split, parameters=None, load_examples=True):
     parameters = load_parameters()
     username = parameters["huggingface_repo_namespace"]
     reponame = parameters["huggingface_repo_name"]
     dset = load_dataset(
         f"{username}/{reponame}", split=split
     ).to_pandas()
-    dset["train_examples"] = dset["train_examples"].apply(list)
-    dset["test_examples"] = dset["test_examples"].apply(list)
+    if load_examples:
+        dset["train_examples"] = dset["train_examples"].apply(json.loads)
+        dset["test_examples"] = dset["test_examples"].apply(json.loads)
+        dset["all_examples"] = dset["all_examples"].apply(json.loads)
     return dset
 
 
@@ -32,13 +36,13 @@ def load_train_files(train_val_split):
     for split in splits:
         parquet_path = parameters["data_dir"] + f"/parquets/"
         csv_path = parameters["data_dir"] + f"/csvs/"
-
-        dataset = dataset.map(
-            lambda x: {"prompt": [{"role": "user", "content": x["interactive_starting_prompt"]}]}
-        )
+        os.makedirs(parquet_path, exist_ok=True)
+        os.makedirs(csv_path, exist_ok=True)
+        dataset = get_dataset(split, parameters=parameters, load_examples=False)
+        dataset["prompt"] = dataset["interactive_starting_prompt"].apply(lambda x: [{"role": "user", "content": x}] if x else None)
         dataset_length = len(dataset)
         # drop rows where prompt is None
-        dataset = dataset.filter(lambda x: x["prompt"][0]["content"] is not None)
+        dataset = dataset[dataset["prompt"].notna()].reset_index(drop=True)
         if len(dataset) < dataset_length:
             log_warn(
                 f"Dropped {dataset_length - len(dataset)}/{dataset_length} rows with invalid prompts for split {split}",
@@ -48,10 +52,10 @@ def load_train_files(train_val_split):
             dataset.to_parquet(parquet_path + f"test.parquet")
             dataset.to_csv(csv_path + f"test.csv", index=False)
         else:
-            dataset.shuffle(seed=parameters["random_seed"])
+            dataset = dataset.sample(frac=1, random_state=parameters["random_seed"]).reset_index(drop=True)
             train_size = int(len(dataset) * train_val_split)
-            train_dataset = dataset.select(range(train_size))
-            val_dataset = dataset.select(range(train_size, len(dataset)))
+            train_dataset = dataset.loc[:train_size].reset_index(drop=True)
+            val_dataset = dataset.loc[train_size:].reset_index(drop=True)
             train_dataset.to_parquet(f"{parquet_path}/train.parquet")
             val_dataset.to_parquet(f"{parquet_path}/val.parquet")
             train_dataset.to_csv(f"{csv_path}/train.csv", index=False)

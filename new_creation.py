@@ -5,6 +5,9 @@ import click
 import os
 import pandas as pd
 import numpy as np
+import shutil
+
+import json
 
 TEST_DATASETS = ["cruxeval", "mbpp", "humaneval"]
 TRAIN_DATASETS = ["code_alpaca", "magic_coder"]
@@ -709,14 +712,25 @@ def create_examples(dataset, parameters):
 def train_test_split(examples, n_train=2):
     # shuffle examples
     np.random.shuffle(examples)
-    inputs  = [example[0] for example in examples]
-    outputs = [eval(example[1]) for example in examples]
+    inputs = []
+    outputs = []
+    for example in examples:
+        try:
+            input_str = example[0]
+            output = eval(example[1])
+            inputs.append(input_str)
+            outputs.append(output)
+        except Exception as e:
+            #print(f"Error evaluating example output: {example[1]} with error {e}, skipping this example.")
+            pass
     train_inputs = []
     train_outputs = []
     test_inputs = []
     test_outputs = []
     for i in range(len(inputs)):
         if len(train_inputs) >= n_train:
+            test_inputs.append(inputs[i])
+            test_outputs.append(outputs[i])
             continue
         if i == 0:
             train_inputs.append(inputs[i])
@@ -750,11 +764,22 @@ def train_test_split(examples, n_train=2):
                 train_outputs.append(repr(candidate_output))
     train_examples = list(zip(train_inputs, train_outputs))
     test_examples = list(zip(test_inputs, test_outputs))
+    #print(f"Train examples: {train_examples}")
+    #print(f"Test examples: {test_examples}")
     return train_examples, test_examples
+
+def robust_serialize(obj):
+    try:
+        # ensure_ascii=False helps with the UTF-8 OverflowErrors
+        return json.dumps(obj, ensure_ascii=False)
+    except Exception:
+        # If it's a weird type (like a tuple or set), convert to string
+        return str(obj)
 
 def split_examples(dataset, n_train=2, min_test=4):
     dataset["train_examples"] = None
     dataset["test_examples"] = None
+    dataset["all_examples"] = None
     for idx, row in tqdm(
         dataset.iterrows(), desc="Finalizing dataset with train/test split", total=len(dataset)
     ):
@@ -764,8 +789,11 @@ def split_examples(dataset, n_train=2, min_test=4):
             dataset.at[idx, "train_examples"] = None
             dataset.at[idx, "test_examples"] = None
         else:
-            dataset.at[idx, "train_examples"] = train_examples
-            dataset.at[idx, "test_examples"] = test_examples
+            dataset.at[idx, "train_examples"] = robust_serialize(train_examples)
+            dataset.at[idx, "test_examples"] = robust_serialize(test_examples)
+            prev_results = [(example[0], example[1], repr(None)) for example in train_examples]
+            dataset.at[idx, "all_examples"] = robust_serialize(prev_results)
+
     initial_length = len(dataset)
     dataset = dataset[~dataset["train_examples"].isna()].reset_index(drop=True)
     dataset = dataset[~dataset["test_examples"].isna()].reset_index(drop=True)
@@ -773,14 +801,25 @@ def split_examples(dataset, n_train=2, min_test=4):
     log_info(
         f"Dropped {initial_length - final_length}/{initial_length} functions that could not be finalized with a train/test split of at least {n_train} train and {min_test} test examples."
     )
-    dataset["all_examples"] = None
-    for idx, row in tqdm(
-        dataset.iterrows(), desc="Combining all examples into one column", total=len(dataset)
-    ):
-        train_examples = row["train_examples"]
-        prev_results = [(example[0], example[1], repr(None)) for example in train_examples]
-        dataset.at[idx, "all_examples"] = prev_results
     return dataset
+
+def remove_bad_rows(dataset):
+    bad_rows = []
+    for i in tqdm(range(len(dataset)), desc="Removing bad rows that cause indexing errors"):
+        try:
+            dataset.loc[i:i+1].to_json("tmp.jsonl", orient="records", lines=True)
+            df = pd.read_json("tmp.jsonl", orient="records", lines=True)
+            df["train_examples"] = df["train_examples"].apply(json.loads)
+            df["test_examples"] = df["test_examples"].apply(json.loads)
+            df["all_examples"] = df["all_examples"].apply(json.loads)
+        except Exception as e:
+            bad_rows.append(i)
+    dataset = dataset[~dataset.index.isin(bad_rows)].reset_index(drop=True)
+    log_info(f"Removed {len(bad_rows)} bad rows that caused indexing errors.")
+    if os.path.exists("tmp.jsonl"):
+        os.remove("tmp.jsonl")
+    return dataset
+
 
 
 def remove_write_functions(dataset):
@@ -796,6 +835,12 @@ def remove_write_functions(dataset):
         new = new_items(existing_files)
         if len(new) > 0:
             dataset.at[idx, "test_func_validated"] = None
+        # remove any new files that were created to clean up for the next function
+        for file in new:
+            if os.path.isfile(file):
+                os.remove(file)
+            elif os.path.isdir(file):
+                shutil.rmtree(file)        
     initial_length = len(dataset)
     dataset = dataset[~dataset["test_func_validated"].isna()].reset_index(drop=True)
     final_length = len(dataset)
@@ -829,7 +874,7 @@ def add_direct_prompt(dataset):
     def create_direct_prompt(row):
         header = row["header"]
         prompt = Prompts.direct.replace("[HEADER]", header)
-        train_examples = row["train_examples"]
+        train_examples = json.loads(row["train_examples"])
         prev_results = [(example[0], example[1], None) for example in train_examples]
         prev_str = get_prev_results_str(prev_results)
         prompt = prompt.replace("[PREV]", prev_str)
@@ -840,7 +885,7 @@ def add_direct_prompt(dataset):
 def add_interactive_starting_prompt(dataset):
     def create_interactive_prompt(row):
         header = row["header"]
-        train_examples = row["train_examples"]
+        train_examples = json.loads(row["train_examples"])
         prev_results = [(example[0], example[1], None) for example in train_examples]
         prompt = get_interactive_starting_prompt(header, prev_results)
         return prompt
@@ -850,7 +895,8 @@ def add_interactive_starting_prompt(dataset):
 
 def finalize_dataset(dataset):
     dataset = split_examples(dataset)
-    dataset = remove_write_functions(dataset)
+    dataset = remove_bad_rows(dataset)
+    #dataset = remove_write_functions(dataset)
     dataset = add_header(dataset)
     dataset = add_direct_prompt(dataset)
     dataset = add_interactive_starting_prompt(dataset)
@@ -980,12 +1026,6 @@ def do_finalization(split, parameters):
             f"Validated with examples {split} file not found at {load_path}.",
             parameters=parameters,
         )
-    if os.path.exists(save_path):
-        log_info(
-            f"Finalized {split} file already exists at {save_path}, skipping finalization.",
-            parameters=parameters,
-        )
-        return
     df = pd.read_json(load_path, orient="records", lines=True)
     df = finalize_dataset(df)
     df.to_json(save_path, orient="records", lines=True)
@@ -1001,6 +1041,8 @@ def push_to_huggingface(split, parameters):
             parameters=parameters,
         )
     df = pd.read_json(load_path, orient="records", lines=True)
+    keep_columns = ["test_func_validated", "description", "train_examples", "test_examples", "all_examples", "direct_prompt", "interactive_starting_prompt", "header"]
+    df = df[keep_columns]
     dataset = Dataset.from_pandas(df)
     username = parameters["huggingface_repo_namespace"]
     reponame = parameters["huggingface_repo_name"]

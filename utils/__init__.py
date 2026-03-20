@@ -71,6 +71,25 @@ class RunTestFunc:
         except Exception as e:
             queue.put(False)  # fails
 
+    @staticmethod
+    def timed_literal_eval(expr, timeout=0.5):
+        """Evaluates a Python expression with a timeout."""
+        queue = multiprocessing.Queue()
+        p = multiprocessing.Process(target=literal_eval, args=(expr,))
+        p.start()
+        p.join(timeout=timeout)
+        if p.is_alive():
+            p.terminate()
+            p.join()
+            raise TimeoutError(f"Literal eval exceeded {timeout} seconds")
+        if not queue.empty():
+            success, result = queue.get()
+            if success:
+                return result, True
+            else:
+                return None, False
+        return None, False
+
     def try_exec(self, func_code):
         """Tries to exec the given code in a separate process with a timeout."""
         queue = multiprocessing.Queue()
@@ -159,7 +178,7 @@ def get_initial_results(func_code, examples):
     return prev_results, runner
 
 
-def get_prev_results_str(prev_results, max_previous_results):
+def get_prev_results_str(prev_results, max_previous_results=None):
     if not prev_results:
         return "[]"
     results_str = "[\n"
