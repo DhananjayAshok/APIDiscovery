@@ -33,7 +33,7 @@ def word_count(s):
     return len(s.split())
 
 
-def interactive(model, runner, header, train_examples, max_iterations=100, max_previous_results=10
+def interactive(model, runner, header, train_examples, max_iterations=20, max_previous_results=10
 ):
     prev_results = []
     for example in train_examples:
@@ -186,7 +186,11 @@ def get_interactive_from_row(model, row):
     test_func_str = row["test_func_validated"]
     train_examples = row["train_examples"]
     header = row["header"]
-    runner = RunTestFunc(test_func_str)
+    try:
+        runner = RunTestFunc(test_func_str)
+    except Exception as e:
+        log_warn(f"Error creating runner for test_func {test_func_str}")
+        return None, None, None, None, None
     return interactive(model, runner, header, train_examples)
 
 
@@ -226,6 +230,8 @@ def run_interactive(model_name, save_name, override_gen):
             desc=f"Evaluating {save_name}",
         ):
             predicted_description, n_queries, concluded, step_df, all_examples = get_interactive_from_row(model, row)
+            if predicted_description is None:
+                continue
             steps = step_df.to_dict(orient="records")
             repr_examples = []
             for suggested_input, output, error in all_examples:
@@ -280,6 +286,8 @@ def create_interactive_training_data(model_name, sample_perc, override_gen):
             desc=f"Creating training data from {model_name}",
         ):
             predicted_description, n_queries, concluded, step_df, all_examples = get_interactive_from_row(model, row)
+            if predicted_description is None:
+                continue
             step_df = step_df[step_df["is_good"] == True]
             for _, step_row in step_df.iterrows():
                 data.append([step_row["prompt"], step_row["output"]])

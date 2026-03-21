@@ -371,7 +371,20 @@ class APIModel(RateLimitedAPIBase, InferenceModel, ABC):
         ) in (
             inputs
         ):  # there is no pricing advantage for batch_size > 1, so just do them sequentially to allow the caller of this function to pass lists of any size.
-            response = self.query_client([input_message], max_new_tokens)
+            success = False
+            n_tries = 0
+            response = ""
+            while not success and n_tries < 3:  # Retry up to 3 times
+                try:
+                    response = self.query_client([input_message], max_new_tokens)
+                    success = True
+                except Exception as e:
+                    n_tries += 1
+                    log_warn(
+                        f"API query failed on try {n_tries} with error: {e}. Retrying..."
+                    )
+            if response == "":
+                log_warn(f"API query failed after 3 tries. Returning empty response for input: {input_message}")
             responses.append(response)
         outputs = []
         for response in responses:
