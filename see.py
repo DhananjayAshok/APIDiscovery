@@ -9,7 +9,7 @@ from tqdm import tqdm
 import numpy as np
 
 
-method_orders = {"in-context": 0, "ft": 1, "zeroshot": 2, "rl": 3, "gold": 4}
+method_orders = {"incontext": 0, "ft": 1, "interactive": 2, "rl": 3, "gold": 4}
 
 model_orders = {
     "Meta-Llama-3-8B-Instruct": 0,
@@ -145,10 +145,10 @@ def comparisons(df, metric_col, col="Method"):
                     )
 
 
-def do_test(df, metric_col, dataset, save_name):
+def do_test(df, metric_col, save_name):
     columns = ["Method 1", "Model 1", "Method 2", "Model 2", "p-value"]
     data = []
-    log_info(f"Performing statistical tests for dataset {dataset} and metric {metric_col}")
+    log_info(f"Performing statistical tests for metric {metric_col}")
     for val1, sys1, val2, sys2 in comparisons(df, metric_col):
         p_val = paired_bootstrap(
             sys1,
@@ -162,9 +162,9 @@ def do_test(df, metric_col, dataset, save_name):
         )
         data.append([val1[0], val1[1], val2[0], val2[1], p_val])
     result_df = pd.DataFrame(data, columns=columns)
-    os.makedirs(f"results/statistical_tests/{dataset}", exist_ok=True)
-    result_df.to_csv(f"results/statistical_tests/{dataset}/{save_name}.csv", index=False)
-    log_info(f"Saved statistical test results to results/statistical_tests/{dataset}/{save_name}.csv")
+    os.makedirs(f"results/statistical_tests/{save_name}", exist_ok=True)
+    result_df.to_csv(f"results/statistical_tests/{save_name}/{save_name}.csv", index=False)
+    log_info(f"Saved statistical test results to results/statistical_tests/{save_name}/{save_name}.csv")
     return result_df
 
 
@@ -202,15 +202,13 @@ class Stats:
         return True
 
     @staticmethod
-    def make_df(dataset, eval_dicts, path_dict):
+    def make_df(eval_dicts, path_dict):
         if len(eval_dicts) == 0 or len(path_dict) == 0:
             return None
         first_eval_key = list(eval_dicts.keys())[0]
         columns = ["Model", "Method"] + list(eval_dicts[first_eval_key].keys())
         data = []
         for path in eval_dicts:
-            if path_dict[path]["dataset"] != dataset:
-                continue
             details = path_dict[path]
             row = [details["model"], details["method"]]
             for key in eval_dicts[path]:
@@ -283,48 +281,48 @@ class Stats:
             "all_scores": df["score"].tolist(),
         }
 
-    def save_description(dataset, eval_dicts, path_dicts):
+    def save_description(eval_dicts, path_dicts):
         """ """
-        os.makedirs(f"results/figure_dfs/{dataset}", exist_ok=True)
-        df = Stats.make_df(dataset, eval_dicts, path_dicts)
+        os.makedirs(f"results/figure_dfs/", exist_ok=True)
+        df = Stats.make_df(eval_dicts, path_dicts)
         if df is None:
             log_warn("No data available to plot.")
             return
         df.to_json(
-            f"results/figure_dfs/{dataset}/description_stats.jsonl",
+            f"results/figure_dfs/description_stats.jsonl",
             orient="records",
             lines=True,
         )
-        log_info(f"Saved description stats dataframe for dataset {dataset} with {len(df)} rows to results/figure_dfs/{dataset}/description_stats.jsonl")
-        do_test(df, "all_scores", dataset, "description")
+        log_info(f"Saved description stats dataframe with {len(df)} rows to results/figure_dfs/description_stats.jsonl")
+        do_test(df, "all_scores", "description")
 
-    def save_exact_match(dataset, title, eval_dicts, path_dicts):
-        os.makedirs(f"results/figures/{dataset}", exist_ok=True)
-        df = Stats.make_df(dataset, eval_dicts, path_dicts)
+    def save_exact_match(title, eval_dicts, path_dicts):
+        os.makedirs(f"results/figures/", exist_ok=True)
+        df = Stats.make_df(eval_dicts, path_dicts)
         if df is None:
             log_warn("No data available to plot.")
             return
         df.to_json(
-            f"results/figure_dfs/{dataset}/{title}_stats.jsonl",
+            f"results/figure_dfs/{title}_stats.jsonl",
             orient="records",
             lines=True,
         )
-        log_info(f"Saved {title} stats dataframe for dataset {dataset} with {len(df)} rows to results/figure_dfs/{dataset}/{title}_stats.jsonl")
-        do_test(df, "all_exact_matches", dataset, title)
+        log_info(f"Saved {title} stats dataframe with {len(df)} rows to results/figure_dfs/{title}_stats.jsonl")
+        do_test(df, "all_exact_matches", title)
 
-    def save_code(dataset, eval_dicts, path_dicts):
+    def save_code(eval_dicts, path_dicts):
         Stats.save_exact_match(
-            dataset, "code", eval_dicts, path_dicts,
+            "code", eval_dicts, path_dicts,
         )
 
-    def save_output_prediction(dataset, eval_dicts, path_dicts):
+    def save_output_prediction(eval_dicts, path_dicts):
         Stats.save_exact_match(
-            dataset, "output", eval_dicts, path_dicts, 
+            "output", eval_dicts, path_dicts, 
         )
 
-    def save_input_prediction(dataset, eval_dicts, path_dicts):
+    def save_input_prediction(eval_dicts, path_dicts):
         Stats.save_exact_match(
-            dataset, "input", eval_dicts, path_dicts, 
+            "input", eval_dicts, path_dicts, 
         )
 
     @staticmethod
@@ -389,7 +387,7 @@ class Stats:
 
 
 def is_valid_file(path):
-    # description pattern is method_model-dataset-judge-judgemodel.jsonl
+    # description pattern is method_model-judge-judgemodel.jsonl
     description_judge_model = parameters["evaluation_model_name"].split("/")[-1]
     code_judge_model = parameters["code_generation_model_name"].split("/")[-1]
     input_output_judge_model = parameters["input_output_prediction_model_name"].split(
@@ -409,7 +407,7 @@ def is_valid_file(path):
 
 
 def get_file_details(path):
-    methods = ["zeroshot", "ft", "in-context", "rl", "gold"]
+    methods = method_orders.keys()
     task = is_valid_file(path)
     path = os.path.basename(path)
     if task is None:
@@ -430,11 +428,10 @@ def get_file_details(path):
 @click.command()
 @click.option("--n", default=1, help="Number of random samples to display")
 @click.option("--method", default="zeroshot", help="Method to filter by")
-@click.option("--dataset", default="humaneval", help="Dataset to filter by")
 @click.option("--judge", default="Llama-3.1-8B-Instruct", help="Judge to filter by")
 @click.option("--model", default="Meta-Llama-3-8B-Instruct", help="Model to filter by")
-def d(n, method, dataset, judge, model):
-    path = f"results/{dataset}/{method}_{model}-{dataset}-judge-{judge}.jsonl"
+def d(n, method, judge, model):
+    path = f"results/evals/{method}_{model}-judge-{judge}.jsonl"
     df = pd.read_json(path, lines=True)
     for i in range(n):
         row = df.sample(1).iloc[0]
@@ -453,10 +450,9 @@ def d(n, method, dataset, judge, model):
     default=None,
     help="Method to filter by. Will filter by prefix in filename",
 )
-@click.option("--dataset", default=None, help="Dataset to filter by.")
 @click.option("--model", default=None, help="Model to filter by.")
-def stats_all(kind, method, dataset, model):
-    path = f"results/"
+def stats_all(kind, method, model):
+    path = f"results/evals/"
     figure_path = f"results/figures/"
     valid_stats = {
         "description": [],
@@ -470,33 +466,26 @@ def stats_all(kind, method, dataset, model):
         allowed_kinds = set(valid_stats.keys())
     else:
         allowed_kinds = {kind}
-    found_datasets = []
-    for use_dataset in os.listdir(path):
-        options = os.path.join(path, use_dataset)
-        for file in os.listdir(options):
-            file_path = os.path.join(options, file)
-            if method is not None and method not in file_path:
+    options = os.path.join(path)
+    for file in os.listdir(options):
+        file_path = os.path.join(options, file)
+        if method is not None and method not in file_path:
+            continue
+        if model is not None and model not in file_path:
+            continue
+        # just ensure the model isn't the judge part
+        if "judge" in file_path:
+            nonjudge_part = file_path.split("judge")[0]
+            if model is not None and model not in nonjudge_part:
                 continue
-            if dataset is not None and dataset not in file_path:
-                continue
-            if model is not None and model not in file_path:
-                continue
-            # just ensure the model isn't the judge part
-            if "judge" in file_path:
-                nonjudge_part = file_path.split("judge")[0]
-                if model is not None and model not in nonjudge_part:
-                    continue
 
-            stat_type = is_valid_file(file)
-            if stat_type and stat_type in allowed_kinds:
-                valid_stats[stat_type].append(file_path)
-                path_mapper[file_path] = get_file_details(file_path)
-                path_mapper[file_path]["dataset"] = use_dataset
-                if use_dataset not in found_datasets:
-                    found_datasets.append(use_dataset)
-            else:
-                # log_warn(f"Skipping invalid file: {file_path}")
-                pass
+        stat_type = is_valid_file(file)
+        if stat_type and stat_type in allowed_kinds:
+            valid_stats[stat_type].append(file_path)
+            path_mapper[file_path] = get_file_details(file_path)
+        else:
+            # log_warn(f"Skipping invalid file: {file_path}")
+            pass
 
     for stat_type, files in valid_stats.items():
         log_info(f"Processing {len(files)} files for stat type: {stat_type}")
@@ -517,15 +506,14 @@ def stats_all(kind, method, dataset, model):
                 continue
             if stats is not None:
                 df_mapper[file] = stats
-        for dataset in found_datasets:
-            if stat_type == "description":
-                Stats.save_description(dataset, df_mapper, path_mapper)
-            if stat_type == "code":
-                Stats.save_code(dataset, df_mapper, path_mapper)
-            elif stat_type == "output_prediction":
-                Stats.save_output_prediction(dataset, df_mapper, path_mapper)
-            elif stat_type == "input_prediction":
-                Stats.save_input_prediction(dataset, df_mapper, path_mapper)
+        if stat_type == "description":
+            Stats.save_description(df_mapper, path_mapper)
+        if stat_type == "code":
+            Stats.save_code(df_mapper, path_mapper)
+        elif stat_type == "output_prediction":
+            Stats.save_output_prediction(df_mapper, path_mapper)
+        elif stat_type == "input_prediction":
+            Stats.save_input_prediction(df_mapper, path_mapper)
 
 
 @click.group()

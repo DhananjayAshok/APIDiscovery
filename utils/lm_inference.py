@@ -472,6 +472,9 @@ class OpenAIAPIModel(OpenAICompatibleAPIBase, APIModel):
         :rtype: str
         """
         text = ""
+        if response.choices is None:
+            log_warn(f"Received response with no choices: {response}")
+            return ""
         message = response.choices[0].message
         if hasattr(message, "reasoning") and message.reasoning is not None:
             text = "Reasoning: " + message.reasoning
@@ -591,6 +594,9 @@ class AnthropicModel(APIModel):
         return response
 
     def get_output_texts(self, response: Any) -> str:
+        if response.content is None:
+            log_warn(f"Received response with no content: {response}")
+            return ""
         return response.content[0].text
 
 
@@ -743,8 +749,8 @@ class HuggingFaceModel(HuggingFaceModelBase, InferenceModel):
         )
 
     def get_single_message_list(self, text: str, images: list[Image.Image]) -> dict:
-        content = [{"type": "text", "text": text}]
-        if images is not None:
+        if images:
+            content = [{"type": "text", "text": text}]
             for img in images:
                 content.append(
                     {
@@ -752,6 +758,8 @@ class HuggingFaceModel(HuggingFaceModelBase, InferenceModel):
                         "image": img,
                     }
                 )
+        else:
+            content = text
         return [{"role": "user", "content": content}]
 
     def do_infer(

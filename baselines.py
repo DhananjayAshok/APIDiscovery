@@ -208,6 +208,7 @@ def run_interactive(model_name, save_name, override_gen):
     if save_name is None:
         save_name = model_save_name
     save_path = get_save_paths(save_name)
+    checkpoint_path = save_path.replace(".jsonl", "_checkpoint.jsonl")
     file_makedir(save_path)
     if os.path.exists(save_path) and not override_gen:
         log_info(
@@ -216,6 +217,7 @@ def run_interactive(model_name, save_name, override_gen):
     else:
         model = get_lm(model_name)
         dataset = get_dataset("debug" if parameters["debug"] else "test", parameters=parameters)
+        dataset = dataset.reset_index(drop=True)
         columns = [
             "n_queries",
             "concluded",
@@ -224,11 +226,30 @@ def run_interactive(model_name, save_name, override_gen):
         ]
         for column in columns:
             dataset[column] = None
+        start_index = 0
+        if os.path.exists(checkpoint_path) and not override_gen:
+            log_info(f"Checkpoint file {checkpoint_path} found, resuming from checkpoint.")
+            dataset = load_dataset_df(checkpoint_path)
+            # look from the end and identify the first non None predicted_description and set start_index to that + 1
+            description_nans = dataset["predicted_description"].isna()
+            for i in range(len(dataset) - 1, -1, -1):
+                if not description_nans[i]:
+                    start_index = i + 1
+                    break
+            if start_index >= len(dataset):
+                log_info(
+                    f"All rows in checkpoint file {checkpoint_path} already have predictions, skipping generation. Run with override_gen=True to re-evaluate."
+                )
+                save_dataset_df(dataset, save_path)
+                log_info(f"Saved predictions to {save_path}")
+                return
         for i, row in tqdm(
             dataset.iterrows(),
             total=len(dataset),
             desc=f"Evaluating {save_name}",
         ):
+            if i < start_index:
+                continue
             predicted_description, n_queries, concluded, step_df, all_examples = get_interactive_from_row(model, row)
             if predicted_description is None:
                 continue
@@ -246,7 +267,10 @@ def run_interactive(model_name, save_name, override_gen):
             dataset.at[i, "concluded"] = concluded
             dataset.at[i, "steps"] = steps
             dataset.at[i, "all_examples"] = repr_examples
+            save_dataset_df(dataset, checkpoint_path)
         save_dataset_df(dataset, save_path)
+        if os.path.exists(checkpoint_path):
+            os.remove(checkpoint_path)
         log_info(f"Saved predictions to {save_path}")
     return save_path
 

@@ -186,6 +186,7 @@ def evaluate_input_prediction(true_code, target_output, predicted_input):
 
 def score_code(predictions_save_path, override_eval=False):
     df = load_dataset_df(predictions_save_path)
+    eval_save_path = predictions_save_path.replace("predictions", "evals")
     if "predicted_code" not in df.columns:
         log_error(f"predicted_code not in df with columns: {df.columns}")
     if "true_test_outputs" in df.columns and not override_eval:
@@ -206,8 +207,8 @@ def score_code(predictions_save_path, override_eval=False):
         df.at[idx, "can_exec_pred_code"] = can_exec_pred_code
         df.at[idx, "predicted_test_outputs"] = predicted_outputs
         df.at[idx, "predicted_outputs_exact_match"] = exact_match
-    save_dataset_df(df, predictions_save_path)
-    log_info(f"Saved scored predictions to {predictions_save_path}")
+    save_dataset_df(df, eval_save_path)
+    log_info(f"Saved scored predictions to {eval_save_path}")
     log_info(
         f"Average exact match on test outputs: {df['predicted_outputs_exact_match'].mean()} +- {df['predicted_outputs_exact_match'].std()}"
     )
@@ -215,6 +216,7 @@ def score_code(predictions_save_path, override_eval=False):
 
 def score_output_prediction(predictions_save_path, override_eval=False):
     df = load_dataset_df(predictions_save_path)
+    eval_save_path = predictions_save_path.replace("predictions", "evals")
     if "predicted_output" not in df.columns:
         log_error(f"predicted_output not in df with columns: {df.columns}")
     if "output_prediction_correct_micro" in df.columns and not override_eval:
@@ -243,8 +245,8 @@ def score_output_prediction(predictions_save_path, override_eval=False):
         df.at[idx, "output_prediction_correct_micro"] = (
             sum(matches) / len(matches) if len(matches) > 0 else 0.0
         )
-    save_dataset_df(df, predictions_save_path)
-    log_info(f"Saved scored predictions to {predictions_save_path}")
+    save_dataset_df(df, eval_save_path)
+    log_info(f"Saved scored predictions to {eval_save_path}")
     log_info(
         f"Average micro accuracy on output predictions: {df['output_prediction_correct_micro'].mean()} +- {df['output_prediction_correct_micro'].std()}"
     )
@@ -252,6 +254,7 @@ def score_output_prediction(predictions_save_path, override_eval=False):
 
 def score_input_prediction(predictions_save_path, override_eval=False):
     df = load_dataset_df(predictions_save_path)
+    eval_save_path = predictions_save_path.replace("predictions", "evals")
     if "predicted_input" not in df.columns:
         log_error(f"predicted_input not in df with columns: {df.columns}")
     if "input_prediction_correct_micro" in df.columns and not override_eval:
@@ -283,8 +286,8 @@ def score_input_prediction(predictions_save_path, override_eval=False):
         df.at[idx, "input_prediction_exact_match_micro"] = (
             sum(matches) / len(matches) if len(matches) > 0 else 0.0
         )
-    save_dataset_df(df, predictions_save_path)
-    log_info(f"Saved scored predictions to {predictions_save_path}")
+    save_dataset_df(df, eval_save_path)
+    log_info(f"Saved scored predictions to {eval_save_path}")
     log_info(
         f"Average micro accuracy on input predictions: {df['input_prediction_exact_match_micro'].mean()} +- {df['input_prediction_exact_match_micro'].std()}"
     )
