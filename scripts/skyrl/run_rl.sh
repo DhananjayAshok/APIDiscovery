@@ -27,7 +27,7 @@ if [ -z "$DATA_DIR" ]; then
   exit 1
 fi
 
-bash scripts/warmup_rl.sh -m $trainer_policy_model -d $benchmark_creation_model
+bash scripts/warmup_rl.sh -m $trainer_policy_model
 trainer_policy_model=$storage_dir/models/rl_warmup/${trainer_policy_model#*/}/final_checkpoint
 
 trainer_ckpt_path=$storage_dir/models/rl/$run_name/ckpt
@@ -72,12 +72,12 @@ else
     get_gpus_from_2
 fi
 
-env $vllm_cuda_string vllm serve $trainer_policy_model --dtype bfloat16 --served-model-name "model" &
+#env $vllm_cuda_string vllm serve $trainer_policy_model --dtype bfloat16 --served-model-name "model" &
 
-sleep 30  # Wait for the vllm server to start
+#sleep 30  # Wait for the vllm server to start
 
-
-env HYDRA_FULL_ERROR=1 $cuda_string python -m examples.function_discovery.rl_main \
+#$cuda_string
+env HYDRA_FULL_ERROR=1 python -m examples.function_discovery.rl_main \
   data.train_data="['$DATA_DIR/train.parquet']" \
   data.val_data="['$DATA_DIR/val.parquet']" \
   trainer.algorithm.advantage_estimator="grpo" \

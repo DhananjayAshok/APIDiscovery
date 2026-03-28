@@ -6,22 +6,21 @@ fi
 evaluation_model_save_name="${evaluation_model_name#*/}"
 echo "Evaluation model: $evaluation_model_save_name"
 
-models=("/project2/jonmay_1426/ashokd/APIDiscovery/models/test/")
-datasets=("humaneval")
+models=("Qwen/Qwen3-1.7B")
 
-for dataset_name in "${datasets[@]}"; do
-    for model_name in "${models[@]}"; do
-        model_save_name="${model_name#*/}"
-        save_name="rl_$model_save_name"
-        echo "Testing: $save_name on dataset: $dataset_name"
-        python baselines.py zeroshot --dataset_name "$dataset_name" --model_name "$model_name/final_checkpoint/" --save_name "$save_name" # --override_gen
-        python eval.py description --dataset_name $dataset_name --save_name $save_name # --override_eval
-        #evaluation_output_file=results/$dataset_name/$save_name"_scored_"$evaluation_model_save_name".jsonl"
-        python baselines.py code --dataset_name "$dataset_name" --model_name $model_name --save_name "$save_name" # --override_gen
-        python eval.py code --dataset_name $dataset_name --save_name $save_name # --override_eval
-        python baselines.py output --dataset_name "$dataset_name" --model_name $model_name --save_name "$save_name" # --override_gen
-        python eval.py output --dataset_name $dataset_name --save_name $save_name # --override_eval        
-        python baselines.py input --dataset_name "$dataset_name" --model_name $model_name --save_name "$save_name" # --override_gen
-        python eval.py input --dataset_name $dataset_name --save_name $save_name # --override_eval                        
-    done
+for model_name in "${models[@]}"; do
+    model_save_name="${model_name#*/}"
+    model_path=$storage_dir/models/rl_warmup/$model_save_name/final_checkpoint
+    save_name="rl_$model_save_name"
+    bash scripts/warmup_rl.sh -m $model_name
+    echo "Testing: $save_name on dataset"
+    python baselines.py zeroshot --model_name $model_path --save_name "$save_name" # --override_gen
+    python eval.py description --save_name $save_name # --override_eval
+    #evaluation_output_file=results/$dataset_name/$save_name"_scored_"$evaluation_model_save_name".jsonl"
+    python baselines.py code --model_name $model_name --save_name "$save_name" # --override_gen
+    python eval.py code --save_name $save_name # --override_eval
+    python baselines.py output --model_name $model_name --save_name "$save_name" # --override_gen
+    python eval.py output --save_name $save_name # --override_eval        
+    python baselines.py input --model_name $model_name --save_name "$save_name" # --override_gen
+    python eval.py input --save_name $save_name # --override_eval                        
 done

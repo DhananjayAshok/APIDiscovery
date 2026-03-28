@@ -455,11 +455,18 @@ class OpenAIAPIModel(OpenAICompatibleAPIBase, APIModel):
         :return: The raw API response object.
         :rtype: Any
         """
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            max_tokens=max_new_tokens,
-        )
+        if self.model in ["gpt-5.4-mini"]:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_completion_tokens=max_new_tokens,
+            )
+        else:            
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                max_tokens=max_new_tokens,
+            )
         return response
 
     def get_output_texts(self, response: Any) -> str:
@@ -941,7 +948,7 @@ def get_lm(model_name):
         model_engine = "openai"
     elif any_in(model_name, ["claude", "opus", "sonnet", "haiku"]):
         model_engine = "anthropic"
-    elif any_in(model_name, ["gemini", "minimax", "deepseek-v3.2", "kimi-k2.5", "gpt-oss"]):
+    elif any_in(model_name, ["gemini", "minimax", "deepseek-v3.2", "kimi-k2.5", "gpt-oss", "glm"]):
         model_engine = "openrouter"
     else:
         model_engine = "huggingface"

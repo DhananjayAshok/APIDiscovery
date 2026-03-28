@@ -6,10 +6,10 @@ fi
 evaluation_model_save_name="${evaluation_model_name#*/}"
 echo "Evaluation model: $evaluation_model_save_name"
 
-models=("meta-llama/Meta-Llama-3-8B-Instruct" "gpt-4o-mini" "Qwen/Qwen3-8B" "Qwen/Qwen3-32B" "gpt-4o")
+#models=("meta-llama/Meta-Llama-3-8B-Instruct" "gpt-4o-mini" "Qwen/Qwen3-8B" "Qwen/Qwen3-32B" "gpt-4o")
 #models=("gpt-4o")
 #models=("Qwen/Qwen3-8B")
-#models=("meta-llama/Meta-Llama-3-8B-Instruct")
+models=("meta-llama/Meta-Llama-3-8B-Instruct")
 
 
 for model_name in "${models[@]}"; do

@@ -27,13 +27,14 @@ def get_dataset(split, parameters=None, load_examples=True):
     return dset
 
 
-def save_dataset_df(df, save_path):
+def save_dataset_df(df, save_path, verbose=True):
     os.makedirs(os.path.dirname(save_path), exist_ok=True)
     for column in ["train_examples", "test_examples", "all_examples", "predicted_input", "predicted_output"]:
         if column in df.columns:
             df[column] = df[column].apply(robust_serialize)
     df.to_json(save_path, orient="records", lines=True)
-    log_info(f"Saved dataset to {save_path}")
+    if verbose:
+        log_info(f"Saved dataset to {save_path}")
 
 def load_dataset_df(path, deserialize_examples=True):
     df = pd.read_json(path, orient="records", lines=True)

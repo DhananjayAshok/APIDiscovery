@@ -11,6 +11,7 @@ from dataclasses import dataclass
 import numpy as np
 from loguru import logger
 import sys
+import json
 
 
 
@@ -96,7 +97,7 @@ class RunTestFunc:
 
         p.start()
 
-        # Wait0
+        # Wait for the process to complete or timeout
         p.join(timeout=self.timeout)
 
         if p.is_alive():
@@ -269,72 +270,79 @@ class FunctionDiscoveryEnv(BaseTextEnv):
 
         assert "test_func_validated" in extras, "test_func_validated field is required"
         assert "description" in extras, "description field is required"
-        assert "train_inputs" in extras, "train_inputs field is required"
-        assert "test_inputs" in extras, "test_inputs field is required"
+        assert "header" in extras, "header field is required"
+
         self.test_func_validated = extras["test_func_validated"]
         self.description = extras["description"]
-        self.train_inputs = extras["train_inputs"]
-        self.test_inputs = extras["test_inputs"]
+        self.train_inputs = json.loads(extras["train_examples"])
+        self.test_inputs = json.loads(extras["test_examples"])
         self.max_turns = 40
         self.max_previous_results = 5
+        self.func_header = extras["header"]
+        self.reasoning_prompt_filled = self.reasoning_prompt.replace(
+            "[HEADER]", self.func_header
+        )
+        self.input_prompt_filled = self.input_prompt.replace(
+            "[HEADER]", self.func_header
+        )
+        self.reflection_prompt_filled = self.reflection_prompt.replace(
+            "[HEADER]", self.func_header
+        )
+        self.judge_code_generation_prompt = self.judge_code_generation_prompt.replace(
+            "[HEADER]", self.func_header
+        )
         try:
             self.runner = RunTestFunc(self.test_func_validated)
-            func_code = self.test_func_validated
-            header_start = func_code.index("def test_func(")
-            header_end = func_code.index("\n", header_start)
-            func_header = func_code[header_start:header_end]
-            self.func_header = func_header
-            self.reasoning_prompt_filled = self.reasoning_prompt.replace(
-                "[HEADER]", self.func_header
-            )
-            self.input_prompt_filled = self.input_prompt.replace(
-                "[HEADER]", self.func_header
-            )
-            self.reflection_prompt_filled = self.reflection_prompt.replace(
-                "[HEADER]", self.func_header
-            )
-            self.judge_code_generation_prompt = self.judge_code_generation_prompt.replace(
-                "[HEADER]", self.func_header
-            )
-            self.prev_results = []
-            example_outputs = []
-            for example in self.train_inputs:
-                example_outputs.append(self.runner.run_test_str(example))
-
-            for i, example_input in enumerate(self.train_inputs):
-                input_str = example_input
-                output, err = example_outputs[i]
-                self.prev_results.append((input_str, output, err))
-            self.concluded = False
-            self.turn_kind = "input"
-            self.current_hypothesis = "First Turn. No hypothesis yet."
-            self.previous_reasoning = None
-            if LLMJudgeEnvConfig.base_url is not None:
-                openai_api_key = "DUMMY"
-                self.llm_judge_client = OpenAI(
-                    api_key=openai_api_key,
-                    base_url=LLMJudgeEnvConfig.base_url,
-                )                
-                self.model = "model"
-            else:
-                openai_api_key = os.getenv("OPENAI_API_KEY")
-                if openai_api_key is None:
-                    raise ValueError("`OPENAI_API_KEY` must be set for Llm as a judge env")
-                self.llm_judge_client = OpenAI(
-                    api_key=openai_api_key
-                )
-                self.model = LLMJudgeEnvConfig.model
         except:
-            self.runner = None
+            self.runner = None            
+        func_code = self.test_func_validated
+        self.prev_results = []
+        self.test_results = []
+        for input_val, output_val in self.train_inputs:
+            self.prev_results.append((input_val, output_val, None))
+        for input_val, output_val in self.test_inputs:
+            self.test_results.append((input_val, output_val, None))
+
+        self.concluded = False
+        self.turn_kind = "input"
+        self.current_hypothesis = "First Turn. No hypothesis yet."
+        self.previous_reasoning = None
+        if LLMJudgeEnvConfig.base_url is not None:
+            openai_api_key = "DUMMY"
+            self.llm_judge_client = OpenAI(
+                api_key=openai_api_key,
+                base_url=LLMJudgeEnvConfig.base_url,
+            )                
+            self.model = "model"
+        else:
+            openai_api_key = os.getenv("OPENAI_API_KEY")
+            if openai_api_key is None:
+                raise ValueError("`OPENAI_API_KEY` must be set for Llm as a judge env")
+            self.llm_judge_client = OpenAI(
+                api_key=openai_api_key
+            )
+            self.model = LLMJudgeEnvConfig.model
 
 
     def judge_infer(self, prompt, max_new_tokens=300):
-        response = self.llm_judge_client.responses.create(
-            model=self.model,
-            input=prompt,
-            max_output_tokens=max_new_tokens,
-        )
-        text = response.output_text
+        n_tries = 3
+        success = False
+        while not success and n_tries > 0:
+            if n_tries < 3:
+                time.sleep(1 + (3-n_tries) * (10)) # wait a bit before retrying
+            try:
+                response = self.llm_judge_client.responses.create(
+                    model=self.model,
+                    input=prompt,
+                    max_output_tokens=max_new_tokens,
+                )
+                text = response.output_text
+                success = True
+            except Exception as e:
+                n_tries -= 1 
+                if n_tries == 0:
+                    logger.error(f"LLM Judge inference failed after 3 attempts. Error: {str(e)}")
+                    raise RuntimeError(f"LLM Judge inference failed after 3 attempts. Error: {str(e)}")      
         if "[STOP]" in text:
             text = text.split("[STOP]")[0]
         if VERBOSE:
@@ -402,7 +410,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         except:
             return None
         exact_matches = []
-        for inp, out, err in self.prev_results:
+        for inp, out, err in self.test_results:
             gen_out, gen_err = test_runner.run_test_str(inp)
             if gen_err is not None and err is not None:
                 exact_matches.append(1)

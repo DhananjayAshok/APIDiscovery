@@ -223,6 +223,7 @@ def run_interactive(model_name, save_name, override_gen):
             "concluded",
             "predicted_description",
             "steps",
+            "all_examples"
         ]
         for column in columns:
             dataset[column] = None
@@ -243,6 +244,7 @@ def run_interactive(model_name, save_name, override_gen):
                 save_dataset_df(dataset, save_path)
                 log_info(f"Saved predictions to {save_path}")
                 return
+        dataset["concluded"] = dataset["concluded"].astype(bool)
         for i, row in tqdm(
             dataset.iterrows(),
             total=len(dataset),
@@ -264,10 +266,10 @@ def run_interactive(model_name, save_name, override_gen):
                     continue
             dataset.at[i, "predicted_description"] = predicted_description
             dataset.at[i, "n_queries"] = n_queries
-            dataset.at[i, "concluded"] = concluded
+            dataset.at[i, "concluded"] = bool(concluded)
             dataset.at[i, "steps"] = steps
             dataset.at[i, "all_examples"] = repr_examples
-            save_dataset_df(dataset, checkpoint_path)
+            save_dataset_df(dataset.copy(), checkpoint_path, verbose=False)
         save_dataset_df(dataset, save_path)
         if os.path.exists(checkpoint_path):
             os.remove(checkpoint_path)

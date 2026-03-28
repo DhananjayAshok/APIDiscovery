@@ -6,9 +6,9 @@ fi
 evaluation_model_save_name="${evaluation_model_name#*/}"
 echo "Evaluation model: $evaluation_model_save_name"
 
-models=("meta-llama/Meta-Llama-3-8B-Instruct" "Qwen/Qwen3-8B" "Qwen/Qwen3-32B")
+#models=("meta-llama/Meta-Llama-3-8B-Instruct" "Qwen/Qwen3-8B" "Qwen/Qwen3-32B")
 #models=("Qwen/Qwen3-32B")
-#models=("meta-llama/Meta-Llama-3-8B-Instruct")
+models=("meta-llama/Meta-Llama-3-8B-Instruct")
 
 
 # First, train each model on the train dataset

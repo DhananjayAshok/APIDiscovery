@@ -74,9 +74,12 @@ bash scripts/llm_utils.sh python train.py --training_kind sft --model_name ${ARG
     --per_device_train_batch_size ${ARGS["b"]} --per_device_eval_batch_size ${ARGS["b"]} \
     --num_train_epochs ${ARGS["e"]} \
     --learning_rate 2e-5 \
+    --max_length 1024 \
     --logging_strategy steps --logging_steps 100 \
     --eval_strategy epoch --eval_steps 0.5 \
     --save_strategy epoch --save_steps 0.5 \
     --early_stopping_patience 3 \
     --load_best_model_at_end True \
-    --run_name rl_warmup-$save_name
+    --run_name rl_warmup-$save_name \
+    --push_to_hub True \
+    --hub_model_id $huggingface_repo_namespace/rl_warmup_$save_name
