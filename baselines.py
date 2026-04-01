@@ -363,11 +363,26 @@ def run_extract_code(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
         return df
+    checkpoint_path = output_file.replace(".jsonl", "_checkpoint.jsonl")
+    start_index = 0
+    if os.path.exists(checkpoint_path) and not override_gen:
+        log_info(f"Checkpoint file {checkpoint_path} found, resuming from checkpoint.")
+        df = load_dataset_df(checkpoint_path)
+        output_col_nans = df[output_column].isna()
+        for i in range(len(df) - 1, -1, -1):
+            if not output_col_nans[i]:
+                start_index = i + 1
+                break
     model = get_lm(model_name)
     for i, row in tqdm(df.iterrows(), total=len(df), desc="Generating Code"):
+        if i < start_index:
+            continue
         prompt = row[prompt_column]
         response = model.infer(prompt, max_new_tokens=max_new_tokens)
         df.at[i, output_column] = response
+        save_dataset_df(df.copy(), checkpoint_path, verbose=False)
+    if os.path.exists(checkpoint_path):
+        os.remove(checkpoint_path)
     parse_errors = 0
 
     def extract_code(row):
@@ -540,13 +555,29 @@ def run_predict_output(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
         return load_dataset_df(output_file)
-    df["original_index"] = df.index
-    df = df.reset_index(drop=True)
+    checkpoint_path = output_file.replace(".jsonl", "_checkpoint.jsonl")
+    start_index = 0
+    if os.path.exists(checkpoint_path) and not override_gen:
+        log_info(f"Checkpoint file {checkpoint_path} found, resuming from checkpoint.")
+        df = load_dataset_df(checkpoint_path)
+        output_col_nans = df[output_column].isna()
+        for i in range(len(df) - 1, -1, -1):
+            if not output_col_nans[i]:
+                start_index = i + 1
+                break
+    else:
+        df["original_index"] = df.index
+        df = df.reset_index(drop=True)
     model = get_lm(model_name)
     for i, row in tqdm(df.iterrows(), total=len(df), desc="Generating Output Predictions"):
+        if i < start_index:
+            continue
         prompt = row[prompt_column]
         response = model.infer(prompt, max_new_tokens=max_new_tokens)
         df.at[i, output_column] = response
+        save_dataset_df(df.copy(), checkpoint_path, verbose=False)
+    if os.path.exists(checkpoint_path):
+        os.remove(checkpoint_path)
     parse_errors = 0
 
     def extract_output(row):
@@ -657,13 +688,29 @@ def run_predict_input(
     """
     Common function for running input prediction evaluation.
     """
-    df["original_index"] = df.index
-    df = df.reset_index(drop=True)
+    checkpoint_path = output_file.replace(".jsonl", "_checkpoint.jsonl")
+    start_index = 0
+    if os.path.exists(checkpoint_path) and not override_gen:
+        log_info(f"Checkpoint file {checkpoint_path} found, resuming from checkpoint.")
+        df = load_dataset_df(checkpoint_path)
+        output_col_nans = df[output_column].isna()
+        for i in range(len(df) - 1, -1, -1):
+            if not output_col_nans[i]:
+                start_index = i + 1
+                break
+    else:
+        df["original_index"] = df.index
+        df = df.reset_index(drop=True)
     model = get_lm(model_name)
     for i, row in tqdm(df.iterrows(), total=len(df), desc="Generating Input Predictions"):
+        if i < start_index:
+            continue
         prompt = row[prompt_column]
         response = model.infer(prompt, max_new_tokens=max_new_tokens)
         df.at[i, output_column] = response
+        save_dataset_df(df.copy(), checkpoint_path, verbose=False)
+    if os.path.exists(checkpoint_path):
+        os.remove(checkpoint_path)
 
     def extract_input(row):
         true_description = row["description"]
