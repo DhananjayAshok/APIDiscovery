@@ -11,12 +11,10 @@ figure_df_dir = "results/figure_dfs/"
 plotter = Plotter()
 
 
-def plot_description(dataset):
-    df_path = f"{figure_df_dir}/{dataset}/description_stats.jsonl"
+def plot_description():
+    df_path = f"{figure_df_dir}/description_stats.jsonl"
     if not os.path.exists(df_path):
-        print(
-            f"No description stats found for dataset {dataset} at path {df_path}, skipping plot."
-        )
+        print(f"No description stats found at path {df_path}, skipping plot.")
         return
     df = pd.read_json(df_path, lines=True)
     score_cols = [
@@ -35,6 +33,8 @@ def plot_description(dataset):
         return col
 
     df.rename(columns=rename_score_col, inplace=True)
+    # rename Method column zeroshot to interactive
+    df["Method"] = df["Method"].apply(lambda x: "interactive" if x == "zeroshot" else x)
     colours = [
         "dodgerblue",
         "orangered",
@@ -57,15 +57,13 @@ def plot_description(dataset):
     )
 
     plot_func()
-    plotter.show(save_path=f"{dataset}/description_score_spread.png")
+    plotter.show(save_path=f"description_score_spread.png")
 
 
-def plot_exact_match(dataset, kind):
-    df_path = f"{figure_df_dir}/{dataset}/{kind}_stats.jsonl"
+def plot_exact_match(kind):
+    df_path = f"{figure_df_dir}/{kind}_stats.jsonl"
     if not os.path.exists(df_path):
-        print(
-            f"No {kind} stats found for dataset {dataset} at path {df_path}, skipping plot."
-        )
+        print(f"No {kind} stats found at path {df_path}, skipping plot.")
         return
     df = pd.read_json(df_path, lines=True)
 
@@ -78,10 +76,10 @@ def plot_exact_match(dataset, kind):
             hue="Model",
         )
         plt.ylabel("Average Exact Match (%)")
-        plt.title(f"{kind.capitalize()} Exact Match for {dataset}")
+        plt.title(f"{kind.capitalize()} Exact Match")
 
     plot_func()
-    plotter.show(save_path=f"{dataset}/{kind}_exact_match.png")
+    plotter.show(save_path=f"{kind}_exact_match.png")
 
     df["percentage_exact_match_mid"] = (
         100 - df["percentage_exact_match_1"] - df["percentage_exact_match_0"]
@@ -133,28 +131,25 @@ def plot_exact_match(dataset, kind):
     )
 
     plot_func()
-    plotter.show(save_path=f"{dataset}/{kind}_exact_match_spread.png")
+    plotter.show(save_path=f"{kind}_exact_match_spread.png")
 
 
 @click.command()
-@click.option("--dataset", type=str, default=None, help="Name of the dataset to plot.")
 @click.option(
     "--kind",
     type=str,
     default=None,
     help="metric category to plot (description, code, input, output)",
 )
-def plot(dataset, kind):
-    datasets = [dataset] if dataset else os.listdir(figure_df_dir)
+def plot(kind):
     kinds = [kind] if kind else ["description", "code", "input", "output"]
-    for dataset in datasets:
-        for kind in kinds:
-            if kind == "description":
-                plot_description(dataset)
-            elif kind in ["code", "input", "output"]:
-                plot_exact_match(dataset, kind)
-            else:
-                print(f"Plotting for kind {kind} not implemented yet, skipping.")
+    for kind in kinds:
+        if kind == "description":
+            plot_description()
+        elif kind in ["code", "input", "output"]:
+            plot_exact_match(kind)
+        else:
+            print(f"Plotting for kind {kind} not implemented yet, skipping.")
 
 
 if __name__ == "__main__":
