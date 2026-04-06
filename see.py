@@ -9,22 +9,38 @@ from tqdm import tqdm
 import numpy as np
 
 
+
 method_orders = {"incontext": 0, "ft": 1, "interactive": 2, "rl": 3, "gold": 4}
 
+model_aliases = {
+    "Llama-3.1-8B-Instruct": "Llama3-8B",
+    "Meta-Llama-3-8B-Instruct": "Llama3-8B",
+    "Qwen3-8B": "Qwen3-8B",
+    "Qwen3-32B": "Qwen3-32B",
+    "gpt-4o-mini": "GPT-4o-mini",
+    "gpt-4o": "GPT-4o",
+    "gpt-5.4-mini": "GPT-5-mini",
+    "Qwen3-Coder-30B-A3B-Instruct": "Qwen3-Coder-30B",
+    "granite-8b-code-instruct-128k": "Granite-8B",
+}
+
 model_orders = {
-    "Meta-Llama-3-8B-Instruct": 0,
-    "Llama-3.1-8B-Instruct": 0,
+    "Llama3-8B": 0,
     "Qwen3-8B": 1,
+    "Granite-8B": 1.5,
+    "Qwen3-Coder-30B": 1.75,
     "Qwen3-32B": 2,
-    "gpt-4o-mini": 3,
-    "gpt-4o": 4,
+    "GPT-4o-mini": 3,
+    "GPT-4o": 4,
+    "GPT-5-mini": 5,
 }
 
 model_scales = {
-    "Meta-Llama-3-8B-Instruct": 8,
-    "Llama-3.1-8B-Instruct": 8,
+    "Llama3-8B": 8,
     "Qwen3-8B": 8,
     "Qwen3-32B": 32,
+    "Granite-8B": 8,
+    "Qwen3-Coder-30B": 30,
 }
 
 parameters = load_parameters()
@@ -219,6 +235,7 @@ class Stats:
         df = pd.DataFrame(data, columns=columns)
         # sort the dataframe by model order and then by method order
         df["Method Order"] = df["Method"].apply(lambda x: method_orders[x])
+        df["Model"] = df["Model"].apply(lambda x: model_aliases.get(x, x))
         df["Model Order"] = df["Model"].apply(lambda x: model_orders[x])
         df = df.sort_values(by=["Method Order", "Model Order"]).reset_index(drop=True)
         return df
@@ -393,17 +410,19 @@ def is_valid_file(path):
     input_output_judge_model = parameters["input_output_prediction_model_name"].split(
         "/"
     )[-1]
+    completion_column = None
+    kind = None
     if f"description_prediction_judge-{description_judge_model}.jsonl" in path:
-        return "description"
-    if f"code_prediction_judge-{code_judge_model}.jsonl" in path:
-        return "code"
-    if f"output_prediction_judge-{input_output_judge_model}.jsonl" in path:
-        return "output_prediction"
-    if f"input_prediction_judge-{input_output_judge_model}.jsonl" in path:
-        return "input_prediction"
+        kind = "description"
+    elif f"code_prediction_judge-{code_judge_model}.jsonl" in path:
+        kind = "code"
+    elif f"output_prediction_judge-{input_output_judge_model}.jsonl" in path:
+        kind = "output_prediction"
+    elif f"input_prediction_judge-{input_output_judge_model}.jsonl" in path:
+        kind = "input_prediction"
     #print(path)
     #breakpoint()
-    return None
+    return kind
 
 
 def get_file_details(path):
@@ -486,7 +505,10 @@ def stats_all(kind, method, model):
         else:
             # log_warn(f"Skipping invalid file: {file_path}")
             pass
-
+    all_models = set()
+    for file_path, details in path_mapper.items():
+        all_models.add(details["model"])
+    log_info(f"Found valid files for the following models: {', '.join(all_models)}")
     for stat_type, files in valid_stats.items():
         log_info(f"Processing {len(files)} files for stat type: {stat_type}")
         df_mapper = {}
