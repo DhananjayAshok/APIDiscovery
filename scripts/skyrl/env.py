@@ -11,15 +11,18 @@ from dataclasses import dataclass
 import numpy as np
 from loguru import logger
 import sys
+import pdb
 import json
 
 
-
+#pdb.Pdb(stdin=sys.__stdin__, stdout=sys.__stdout__).set_trace()
 # All rewards are generally in the range [-1, 1], but hypothesis scaling kinda changes that. 
 PARSE_FAILURE_PENALTY = 0.5
 MAX_LENGTH_PENALTY = 1.0 # Really go hardcore on Qwen3, it needs to shut up. 
 HYPOTHESIS_SCALE = 2.0 # scale the hypothesis reward to ensure it is the dominant factor in the reward signal
+SKIP_REASONING_REWARD = False # skip the reasoning reward. 
 VERBOSE = False
+
 
 
 def neg(x):
@@ -30,7 +33,7 @@ class RunTestFunc:
     A class to run a test function defined in code. This differs from the one used in the main code, because of multiprocess spawn vs fork difference when using SkyRL.
     """
 
-    def __init__(self, func_code: str, timeout=2.5):
+    def __init__(self, func_code: str, timeout=10):
         """
         Initializes the RunTestFunc with the given function code. Is not safe (i.e. runs exec on func_code, ensure you do not run malicious code through here by mistake).
 
@@ -138,7 +141,7 @@ class RunTestFunc:
 @dataclass
 class LLMJudgeEnvConfig:
     model: str = "gpt-4o-mini"
-    base_url = None #"http://localhost:8000/v1/" # use "http://localhost:8000/v1" for vLLM servers, None for OpenAI API
+    base_url = "http://localhost:8000/v1/" # use "http://localhost:8000/v1" for vLLM servers, None for OpenAI API
     unsupervised = False
 
 
@@ -454,6 +457,8 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         return total_score * HYPOTHESIS_SCALE
 
     def get_reasoning_reward(self, reasoning: str):
+        if SKIP_REASONING_REWARD:
+            return 0.0
         reasoning_prompt_filled = self.judge_reasoning_prompt.replace(
             "[FUNCTION]",
             self.test_func_validated).replace(
@@ -476,6 +481,8 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         return reasoning_score
 
     def step(self, action: str) -> BaseTextEnvStepOutput:
+        action = action.split("[STOP]")[0].split("[stop]")[0].strip() # just in case, ensure we remove anything after [STOP] token in the action.
+        action = action.split("</think>")[-1].strip() # for Qwen3, also remove anything after </think> token, just in case.
         if self.runner is None:
             new_obs = {"role": "user", "content": "The test function code failed to execute, cannot run environment."}
             return BaseTextEnvStepOutput(
@@ -567,8 +574,12 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                 reward = 0
                 ret, err = self.runner.run_test_str(suggested_inputs)
                 if err is None:
-                    reward += 1/(self.max_turns) # Reward for successfully running the test function with the suggested input, encourages valid inputs.
+                    reward += HYPOTHESIS_SCALE/(2*(self.max_turns)) # Reward for successfully running the test function with the suggested input, encourages valid inputs.
                     # scale the reward to ensure it is never higher than the reward for getting a good hypothesis rating. 
+                else:
+                    reward += neg(PARSE_FAILURE_PENALTY) # penalty for inputs that fail to run, encourages valid inputs.
+                if VERBOSE:
+                    logger.info(f"Suggested Input: {suggested_inputs}, Output: {ret}, Error: {err}, Reward: {reward}")
             self.prev_results.append((suggested_inputs, ret, err))
             last_input_str = (
                 "Input: " + suggested_inputs + f" => Output: {ret}, Error: {err}"

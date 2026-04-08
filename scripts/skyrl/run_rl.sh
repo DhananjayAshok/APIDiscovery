@@ -77,6 +77,11 @@ fi
 #sleep 30  # Wait for the vllm server to start
 
 #$cuda_string
+# for debug, add the following:
+# set NUM_GPUS=1 if feasible
+# environment.skyrl_gym.max_env_workers=0 \ below
+# trainer.algorithm.use_kl_loss=false change this below
+# 
 env HYDRA_FULL_ERROR=1 python -m examples.function_discovery.rl_main \
   data.train_data="['$DATA_DIR/train.parquet']" \
   data.val_data="['$DATA_DIR/val.parquet']" \

@@ -13,8 +13,10 @@ import numpy as np
 method_orders = {"incontext": 0, "ft": 1, "interactive": 2, "rl": 3, "gold": 4}
 
 model_aliases = {
+    "Llama-3.2-1B": "Llama3-1B",
     "Llama-3.1-8B-Instruct": "Llama3-8B",
     "Meta-Llama-3-8B-Instruct": "Llama3-8B",
+    "Qwen3-1.7B": "Qwen3-1.7B",
     "Qwen3-8B": "Qwen3-8B",
     "Qwen3-32B": "Qwen3-32B",
     "gpt-4o-mini": "GPT-4o-mini",
@@ -22,25 +24,33 @@ model_aliases = {
     "gpt-5.4-mini": "GPT-5-mini",
     "Qwen3-Coder-30B-A3B-Instruct": "Qwen3-Coder-30B",
     "granite-8b-code-instruct-128k": "Granite-8B",
+    "glm-5-turbo": "GLM-5-turbo",
+    "deepseek-v3.2": "Deepseek-v3.2",
 }
 
 model_orders = {
-    "Llama3-8B": 0,
-    "Qwen3-8B": 1,
-    "Granite-8B": 1.5,
-    "Qwen3-Coder-30B": 1.75,
-    "Qwen3-32B": 2,
+    "Llama3-1B": 0,
+    "Llama3-8B": 0.5,
+    "Qwen3-1.7B": 1,
+    "Qwen3-Coder-30B": 1.2,    
+    "Qwen3-8B": 1.25,
+    "Qwen3-32B": 1.5,
+    "Granite-8B": 2,
     "GPT-4o-mini": 3,
     "GPT-4o": 4,
     "GPT-5-mini": 5,
 }
 
 model_scales = {
+    "Llama3-1B": 1,
     "Llama3-8B": 8,
     "Qwen3-8B": 8,
     "Qwen3-32B": 32,
     "Granite-8B": 8,
-    "Qwen3-Coder-30B": 30,
+    "Qwen3-Coder-30B": 3,
+    "Qwen3-1.7B": 1.75,
+    "GLM-5-turbo": 40,
+    "Deepseek-v3.2": 37,
 }
 
 parameters = load_parameters()
@@ -283,6 +293,8 @@ class Stats:
         # log_info(f"Correlation between Score, Concluded, Number of Queries, and Description Length:\n{correlation}")
         # score_distribution = df["score"].value_counts().sort_index()
         # log_info(f"Score Distribution:\n{score_distribution}")
+        if len(df["score"].tolist()) < 740:
+            breakpoint() 
         return {
             "avg_score": avg_score,
             "std_score": std_score,
