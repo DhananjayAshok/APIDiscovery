@@ -3,6 +3,7 @@
 declare -A ARGS
 ARGS["n"]="4" # Number of devices
 ARGS["r"]="" # defaults to the model name if not provided
+ARGS["v"]=false # whether to use vllm or APIs for inference. 
 
 # Required arguments
 REQUIRED_ARGS=("m")
@@ -19,9 +20,9 @@ usage() {
 }
 
 # Parse flags
-while getopts ":m:r:n:" opt; do
+while getopts ":m:r:n:v" opt; do
     case $opt in
-        m|r|n)
+        m|r|n|v)
             ARGS["$opt"]="$OPTARG"
             ;;
         \?)
@@ -63,6 +64,7 @@ source configs/config.env
 {  echo "export trainer_policy_model=${ARGS["m"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
 { echo "export run_name=${ARGS["r"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
 { echo "export NUM_GPUS=${ARGS["n"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
+{ echo "export USE_VLLM=${ARGS["v"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
 
 mkdir -p SkyRL/skyrl-train/examples/function_discovery/
 rm -rf SkyRL/skyrl-train/examples/function_discovery/*
