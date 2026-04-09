@@ -18,9 +18,9 @@ usage() {
 }
 
 # Parse flags
-while getopts ":m:r:v" opt; do
+while getopts ":m:r:v:" opt; do
     case $opt in
-        m|r|n|v)
+        m|r|v)
             ARGS["$opt"]="$OPTARG"
             ;;
         \?)
@@ -55,6 +55,16 @@ done
 
 python configs/create_env_file.py
 source configs/config.env
+
+# error out if use_vllm is not set to true or false
+if [ -z ${ARGS["v"]} ]; then
+    echo "Error: v is not set. Please set it to true or false."
+    exit 1
+fi
+if [ ${ARGS["v"]} != "true" ] && [ ${ARGS["v"]} != "false" ]; then
+    echo "Error: v must be set to true or false."
+    exit 1
+fi
 
 # copy the contents of configs/config.env and prepend it to the front of scripts/skyrl/run_rl.sh
 { cat "configs/config.env"; cat scripts/skyrl/run_rl.sh; } > scripts/skyrl/final_run_rl.sh

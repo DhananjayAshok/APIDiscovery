@@ -6,7 +6,7 @@
 source configs/config.env
 source setup/.venv/bin/activate
 DEBUG=false
-NUM_AVAILABLE_GPUS=nvidia-smi --query-gpu=name --format=csv,noheader | wc -l
+NUM_AVAILABLE_GPUS="$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)"
 
 if [ -z "$storage_dir" ]; then
   echo "Error: storage_dir is not set"
@@ -28,10 +28,12 @@ if [ -z "$USE_VLLM" ]; then
   echo "Error: USE_VLLM is not set"
   exit 1
 fi
-if  [ "$DEBUG" = false ]; then
+trainer_policy_model_dir=$storage_dir/models/rl_warmup/${trainer_policy_model#*/}/final_checkpoint
+# if the path does not exist, do the warmup
+if [ ! -d "$trainer_policy_model_dir" ]; then
   bash scripts/warmup_rl.sh -m $trainer_policy_model
 fi
-trainer_policy_model=$storage_dir/models/rl_warmup/${trainer_policy_model#*/}/final_checkpoint
+trainer_policy_model=$trainer_policy_model_dir
 
 trainer_ckpt_path=$storage_dir/models/rl/$run_name/ckpt
 trainer_export_path=$storage_dir/models/rl/$run_name/final_checkpoint/
@@ -46,7 +48,7 @@ set -x
 cuda_string=""
 vllm_cuda_string=""
 get_all_gpus() {
-    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 0 $((NUM_AVAILABLE_GPUS)))"
+    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 0 $((NUM_AVAILABLE_GPUS-1)))"
 }
 
 # 2. Returns 2 to NUM_GPUS-1
@@ -55,7 +57,7 @@ get_gpus_from_2() {
         echo "Error: Not enough GPUs to start from index 2" >&2
         return 1
     fi
-    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 2 $((NUM_AVAILABLE_GPUS)))"
+    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 2 $((NUM_AVAILABLE_GPUS-1)))"
 }
 
 # 3. Returns 1 to NUM_GPUS-1
@@ -64,7 +66,7 @@ get_gpus_from_1() {
         echo "Error: Not enough GPUs to start from index 1" >&2
         return 1
     fi
-    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 1 $((NUM_AVAILABLE_GPUS)))"
+    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 1 $((NUM_AVAILABLE_GPUS-1)))"
 }
 
 # if use_vllm
@@ -142,56 +144,56 @@ if [ "$DEBUG" = true ]; then
     trainer.project_name="function_discovery" \
     trainer.run_name="$run_name" \
     $@
+else
+  env HYDRA_FULL_ERROR=1 python -m examples.function_discovery.rl_main \
+    data.train_data="['$DATA_DIR/train.parquet']" \
+    data.val_data="['$DATA_DIR/val.parquet']" \
+    trainer.algorithm.advantage_estimator="grpo" \
+    trainer.max_ckpts_to_keep=3 \
+    trainer.hf_save_interval=500 \
+    trainer.policy.model.path=$trainer_policy_model \
+    trainer.policy.model.lora.rank=16 \
+    trainer.policy.model.lora.alpha=16 \
+    trainer.export_path=$trainer_export_path \
+    trainer.ckpt_path=$trainer_ckpt_path \
+    trainer.placement.colocate_all=true \
+    trainer.strategy=fsdp2 \
+    trainer.placement.policy_num_gpus_per_node=$NUM_GPUS \
+    trainer.placement.ref_num_gpus_per_node=$NUM_GPUS \
+    generator.num_inference_engines=$NUM_GPUS \
+    generator.inference_engine_tensor_parallel_size=1 \
+    trainer.epochs=5 \
+    trainer.update_epochs_per_batch=1 \
+    trainer.train_batch_size=8 \
+    trainer.policy_mini_batch_size=8 \
+    trainer.critic_mini_batch_size=8 \
+    trainer.micro_forward_batch_size_per_gpu=4 \
+    trainer.micro_train_batch_size_per_gpu=4 \
+    trainer.eval_batch_size=16 \
+    trainer.eval_before_train=true \
+    trainer.eval_interval=5 \
+    trainer.ckpt_interval=10 \
+    trainer.max_prompt_length=512 \
+    generator.sampling_params.max_generate_length=1024 \
+    +generator.engine_init_kwargs.max_model_len=4096 \
+    trainer.policy.optimizer_config.lr=1.0e-6 \
+    trainer.algorithm.use_kl_loss=true \
+    generator.backend=vllm \
+    generator.run_engines_locally=true \
+    generator.weight_sync_backend=nccl \
+    generator.async_engine=true \
+    generator.model_dtype="bfloat16" \
+    generator.batched=false \
+    generator.step_wise_trajectories=true \
+    generator.previous_observation_only=true \
+    environment.env_class=function-discovery \
+    generator.n_samples_per_prompt=8 \
+    generator.gpu_memory_utilization=0.8 \
+    trainer.logger="wandb" \
+    trainer.project_name="function_discovery" \
+    trainer.run_name="$run_name" \
+    $@
+    python scripts/merge_lora_adapter.py --base-model $trainer_policy_model --export-path $trainer_export_path
 fi
 
-env HYDRA_FULL_ERROR=1 python -m examples.function_discovery.rl_main \
-  data.train_data="['$DATA_DIR/train.parquet']" \
-  data.val_data="['$DATA_DIR/val.parquet']" \
-  trainer.algorithm.advantage_estimator="grpo" \
-  trainer.max_ckpts_to_keep=3 \
-  trainer.hf_save_interval=500 \
-  trainer.policy.model.path=$trainer_policy_model \
-  trainer.policy.model.lora.rank=16 \
-  trainer.policy.model.lora.alpha=16 \
-  trainer.export_path=$trainer_export_path \
-  trainer.ckpt_path=$trainer_ckpt_path \
-  trainer.placement.colocate_all=true \
-  trainer.strategy=fsdp2 \
-  trainer.placement.policy_num_gpus_per_node=$NUM_GPUS \
-  trainer.placement.ref_num_gpus_per_node=$NUM_GPUS \
-  generator.num_inference_engines=$NUM_GPUS \
-  generator.inference_engine_tensor_parallel_size=1 \
-  trainer.epochs=5 \
-  trainer.update_epochs_per_batch=1 \
-  trainer.train_batch_size=8 \
-  trainer.policy_mini_batch_size=8 \
-  trainer.critic_mini_batch_size=8 \
-  trainer.micro_forward_batch_size_per_gpu=4 \
-  trainer.micro_train_batch_size_per_gpu=4 \
-  trainer.eval_batch_size=16 \
-  trainer.eval_before_train=true \
-  trainer.eval_interval=5 \
-  trainer.ckpt_interval=10 \
-  trainer.max_prompt_length=512 \
-  generator.sampling_params.max_generate_length=1024 \
-  +generator.engine_init_kwargs.max_model_len=4096 \
-  trainer.policy.optimizer_config.lr=1.0e-6 \
-  trainer.algorithm.use_kl_loss=true \
-  generator.backend=vllm \
-  generator.run_engines_locally=true \
-  generator.weight_sync_backend=nccl \
-  generator.async_engine=true \
-  generator.model_dtype="bfloat16" \
-  generator.batched=false \
-  generator.step_wise_trajectories=true \
-  generator.previous_observation_only=true \
-  environment.env_class=function-discovery \
-  generator.n_samples_per_prompt=8 \
-  generator.gpu_memory_utilization=0.8 \
-  trainer.logger="wandb" \
-  trainer.project_name="function_discovery" \
-  trainer.run_name="$run_name" \
-  $@
-
  
-python examples/function_discovery/adapter_to_model.py $trainer_policy_model $trainer_export_path
