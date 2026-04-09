@@ -111,7 +111,8 @@ Hypothesis Conclusion: """
                         suggested_inputs = opt[opt.index("("):opt.rindex(")")+1].strip()
                         break
             if suggested_inputs is None:
-                last_input_str = "You did not suggest any inputs. Do not do that again."
+                last_input_str = "Invalid input suggested: " + response.strip()
+                log_warn(f"Could not parse suggested input from model response: {response.strip()}")
         # print(f"Suggested inputs: {suggested_inputs}")
         ret, err = runner.run_test_str(suggested_inputs)
         data.append([prompt, response + "\n[STOP]", err is not None])

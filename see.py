@@ -57,6 +57,28 @@ model_scales = {
 parameters = load_parameters()
 
 
+def print_colour(text, colour):
+    start = None
+    end = "\033[0m"
+    if colour == "blue" or colour == "b":
+        start = "94m"
+    elif colour == "green" or colour == "g":
+        start = "92m"
+    elif colour == "red" or colour == "r":
+        start = "91m"
+    elif colour == "yellow" or colour == "y":
+        start = "93m"
+    elif colour == "cyan" or colour == "c":
+        start = "96m"
+    elif colour == "magenta" or colour == "m":
+        start = "95m"
+    if start is not None:
+        print(f"\033[{start}{text}{end}")
+    else:
+        print(text)
+
+
+
 def paired_bootstrap(
     sys1,
     sys2,
@@ -196,23 +218,39 @@ def do_test(df, metric_col, save_name):
 
 
 
-def l(row):
-    if "description" in row:
-        description = row["description"]
-    else:
-        description = row["true_description"]
+def show(row):
+    description = row["description"]
     # train_inputs = row['train_inputs']
     predicted_description = row["predicted_description"]
     score_output = row["score_output"]
     score = row["score"]
     n_queries = row["n_queries"]
     concluded = row["concluded"]
-    # print(f"Train Inputs: {train_inputs}")
-    log_info(f"Description: {description}")
-    log_info(f"Number of Queries: {n_queries}")
-    log_info(f"Concluded: {concluded}")
-    log_info(f"Predicted Description: {predicted_description}")
-    log_info(f"Score: {score}")
+    # Header
+    print(f"Description: {description}")
+    print(f"Queries: {n_queries}  |  Concluded: {concluded}")
+    print()
+
+    # Score colour
+    if score >= 4:
+        score_color = "green"
+    elif score == 3:
+        score_color = "yellow"
+    else:
+        score_color = "red"
+
+    print_colour(f"Predicted Description: {predicted_description}", score_color)
+    print_colour(f"Score Output: {score_output}", score_color)
+    print_colour(f"Score: {score}", score_color)
+    print()
+
+    # Steps
+    steps = row.get("steps", [])
+    for i, step in enumerate(steps):
+        output_color = "cyan" if step.get("is_good") else "red"
+        print_colour(f"  [Step {i+1} Prompt] {step.get('prompt', '')}", "magenta")
+        print_colour(f"  [Output] {step.get('output', '')}", output_color)
+        print()
     return
 
 
@@ -295,7 +333,7 @@ class Stats:
         # score_distribution = df["score"].value_counts().sort_index()
         # log_info(f"Score Distribution:\n{score_distribution}")
         if len(df["score"].tolist()) < 740:
-            breakpoint() 
+             breakpoint()
         return {
             "avg_score": avg_score,
             "std_score": std_score,
@@ -459,16 +497,33 @@ def get_file_details(path):
 
 @click.command()
 @click.option("--n", default=1, help="Number of random samples to display")
-@click.option("--method", default="zeroshot", help="Method to filter by")
-@click.option("--judge", default="Llama-3.1-8B-Instruct", help="Judge to filter by")
+@click.option("--method", default="interactive", help="Method to filter by")
+@click.option("--judge", default=None, help="Judge to filter by")
 @click.option("--model", default="Meta-Llama-3-8B-Instruct", help="Model to filter by")
 def d(n, method, judge, model):
-    path = f"results/evals/{method}_{model}-judge-{judge}.jsonl"
+    if judge is None:
+        judge = parameters["evaluation_model_name"]
+    judge = judge.split("/")[-1]
+    path = f"results/evals/{method}_{model}_description_prediction_judge-{judge}.jsonl"
+    if not os.path.exists(path):
+        log_error(f"File not found: {path}", parameters=parameters)
     df = pd.read_json(path, lines=True)
-    for i in range(n):
-        row = df.sample(1).iloc[0]
-        l(row)
-        print("\n\n XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \n\n")
+    sep = "\n\n XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX \n\n"
+
+    print("===== RANDOM SAMPLE =====")
+    for _, row in df.sample(n).iterrows():
+        show(row)
+        print(sep)
+
+    print("===== HIGHEST SCORE =====")
+    for _, row in df.nlargest(n, "score").iterrows():
+        show(row)
+        print(sep)
+
+    print("===== LOWEST SCORE =====")
+    for _, row in df.nsmallest(n, "score").iterrows():
+        show(row)
+        print(sep)
 
 
 @click.command()
