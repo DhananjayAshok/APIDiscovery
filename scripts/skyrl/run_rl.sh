@@ -88,7 +88,7 @@ fi
 
 # if use_vllm
 if [ "$USE_VLLM" = true ]; then
-  if (( $NUM_AVAILABLE_GPUS -le 3 )); then
+  if (( $NUM_AVAILABLE_GPUS <= 3 )); then
       vllm_cuda_string="CUDA_VISIBLE_DEVICES=0"
       get_gpus_from_1
       NUM_GPUS=$((NUM_AVAILABLE_GPUS - 1))
@@ -135,8 +135,8 @@ if [ "$DEBUG" = true ]; then
     trainer.train_batch_size=8 \
     trainer.policy_mini_batch_size=8 \
     trainer.critic_mini_batch_size=8 \
-    trainer.micro_forward_batch_size_per_gpu=4 \
-    trainer.micro_train_batch_size_per_gpu=4 \
+    trainer.micro_forward_batch_size_per_gpu=2 \
+    trainer.micro_train_batch_size_per_gpu=2 \
     trainer.eval_batch_size=16 \
     trainer.eval_before_train=true \
     trainer.eval_interval=5 \
@@ -184,8 +184,8 @@ else
     trainer.train_batch_size=8 \
     trainer.policy_mini_batch_size=8 \
     trainer.critic_mini_batch_size=8 \
-    trainer.micro_forward_batch_size_per_gpu=4 \
-    trainer.micro_train_batch_size_per_gpu=4 \
+    trainer.micro_forward_batch_size_per_gpu=2 \
+    trainer.micro_train_batch_size_per_gpu=2 \
     trainer.eval_batch_size=16 \
     trainer.eval_before_train=true \
     trainer.eval_interval=5 \
