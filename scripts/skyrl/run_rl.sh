@@ -6,6 +6,7 @@
 source configs/config.env
 source setup/.venv/bin/activate
 DEBUG=false
+NUM_AVAILABLE_GPUS=nvidia-smi --query-gpu=name --format=csv,noheader | wc -l
 
 if [ -z "$storage_dir" ]; then
   echo "Error: storage_dir is not set"
@@ -18,10 +19,6 @@ fi
 if [ -z "$run_name" ]; then
   echo "Warning: run_name is not set. Setting run_name to" $(basename $trainer_policy_model)
   run_name=$(basename $trainer_policy_model)
-fi
-if [ -z "$NUM_GPUS" ]; then
-  echo "Error: NUM_GPUS is not set"
-  exit 1
 fi
 if [ -z "$DATA_DIR" ]; then
   echo "Error: DATA_DIR is not set"
@@ -49,41 +46,44 @@ set -x
 cuda_string=""
 vllm_cuda_string=""
 get_all_gpus() {
-    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 0 $((NUM_GPUS)))"
+    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 0 $((NUM_AVAILABLE_GPUS)))"
 }
 
 # 2. Returns 2 to NUM_GPUS-1
 get_gpus_from_2() {
-    if [ "$NUM_GPUS" -le 2 ]; then
+    if [ "$NUM_AVAILABLE_GPUS" -le 2 ]; then
         echo "Error: Not enough GPUs to start from index 2" >&2
         return 1
     fi
-    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 2 $((NUM_GPUS+1)))"
+    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 2 $((NUM_AVAILABLE_GPUS)))"
 }
 
 # 3. Returns 1 to NUM_GPUS-1
 get_gpus_from_1() {
-    if [ "$NUM_GPUS" -le 1 ]; then
+    if [ "$NUM_AVAILABLE_GPUS" -le 1 ]; then
         echo "Error: Not enough GPUs to start from index 1" >&2
         return 1
     fi
-    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 1 $((NUM_GPUS)))"
+    cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 1 $((NUM_AVAILABLE_GPUS)))"
 }
 
 # if use_vllm
 if [ "$USE_VLLM" = true ]; then
-  if (( $NUM_GPUS == 1 )); then
+  if (( $NUM_AVAILABLE_GPUS -le 3 )); then
       vllm_cuda_string="CUDA_VISIBLE_DEVICES=0"
       get_gpus_from_1
+      NUM_GPUS=$((NUM_AVAILABLE_GPUS - 1))
   else
       vllm_cuda_string="CUDA_VISIBLE_DEVICES=0,1"
       get_gpus_from_2
+      NUM_GPUS=$((NUM_AVAILABLE_GPUS - 2))
   fi
 else
   get_all_gpus
+  NUM_GPUS=$NUM_AVAILABLE_GPUS
 fi
 
-
+echo "Using CUDA_VISIBLE_DEVICES=$cuda_string for training and CUDA_VISIBLE_DEVICES=$vllm_cuda_string for vLLM server (if enabled)"
 
 if [ "$USE_VLLM" = true ]; then
   env $vllm_cuda_string vllm serve $trainer_policy_model --dtype bfloat16 --served-model-name "model" &

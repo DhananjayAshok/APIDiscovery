@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 declare -A ARGS
-ARGS["n"]="4" # Number of devices
 ARGS["r"]="" # defaults to the model name if not provided
 ARGS["v"]=false # whether to use vllm or APIs for inference. 
 
@@ -10,17 +9,16 @@ REQUIRED_ARGS=("m")
 
 # Help function
 usage() {
-    echo "Usage: $0 -m model_name -r run_name [-n num_gpus]"
+    echo "Usage: $0 -m model_name -r run_name"
     echo "Required:"
     echo "  -m model_name     Name of the model to use"
     echo "Options:"
     echo "  -r run_name       Name of the training run (Defaults to model_name if not provided)"
-    echo "  -n num_gpus        Number of GPUs to use"
     exit 1
 }
 
 # Parse flags
-while getopts ":m:r:n:v" opt; do
+while getopts ":m:r:v" opt; do
     case $opt in
         m|r|n|v)
             ARGS["$opt"]="$OPTARG"
@@ -63,7 +61,6 @@ source configs/config.env
 { echo "export DATA_DIR=$storage_dir/data/parquets/"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
 {  echo "export trainer_policy_model=${ARGS["m"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
 { echo "export run_name=${ARGS["r"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
-{ echo "export NUM_GPUS=${ARGS["n"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
 { echo "export USE_VLLM=${ARGS["v"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
 
 mkdir -p SkyRL/skyrl-train/examples/function_discovery/

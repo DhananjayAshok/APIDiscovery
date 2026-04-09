@@ -567,9 +567,17 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                         suggested_inputs = opt
                         break
             if suggested_inputs is None:  # then empty string
+                # one last effort, see if any of the options fit ()
+                for opt in options:
+                    if "(" in opt:
+                        if ")" in opt[opt.index("("):]:
+                            suggested_inputs = opt[opt.index("("):opt.rindex(")")+1].strip()
+                            break
+            if suggested_inputs is None:  # then empty string
                 suggested_inputs = "INVALID INPUT"
                 reward = neg(PARSE_FAILURE_PENALTY)
                 ret, err = None, "Failed to parse input"
+                last_input_str = "[SYSTEM ERROR]: You supplied an invalid input that did not follow the instructions. The function was not queried."
             else:
                 reward = 0
                 ret, err = self.runner.run_test_str(suggested_inputs)
@@ -580,10 +588,10 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                     reward += neg(PARSE_FAILURE_PENALTY) # penalty for inputs that fail to run, encourages valid inputs.
                 if VERBOSE:
                     logger.info(f"Suggested Input: {suggested_inputs}, Output: {ret}, Error: {err}, Reward: {reward}")
-            self.prev_results.append((suggested_inputs, ret, err))
-            last_input_str = (
-                "Input: " + suggested_inputs + f" => Output: {ret}, Error: {err}"
-            )
+                self.prev_results.append((suggested_inputs, ret, err))
+                last_input_str = (
+                    "Input: " + suggested_inputs + f" => Output: {ret}, Error: {err}"
+                )
             prompt = (
                 self.reflection_prompt_filled.replace(
                     "[PREV]", self.get_prev_results_str()
