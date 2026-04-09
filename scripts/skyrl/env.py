@@ -291,6 +291,11 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         self.model = os.getenv("JUDGE_MODEL")
         openai_api_key = os.getenv("OPENAI_API_KEY")
         openrouter_api_key= os.getenv("OPENROUTER_API_KEY")
+        unspervised_str = os.getenv("UNSUPERVISED")
+        if "true" in str(unspervised_str).lower():
+            self.unsupervised = True
+        else:
+            self.unsupervised = False
         if base_url.lower() == "none":
             base_url = None
             api_key = openai_api_key
@@ -415,7 +420,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         return code_score
 
     def get_hypothesis_reward(self, done: bool):
-        if LLMJudgeEnvConfig.unsupervised:
+        if self.unsupervised:
             hypothesis_score = self.unsupervised_hypothesis_reward()
         else:
             hypothesis_score = self.supervised_hypothesis_reward()
