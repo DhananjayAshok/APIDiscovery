@@ -39,6 +39,7 @@ model_orders = {
     "GPT-4o-mini": 3,
     "GPT-4o": 4,
     "GPT-5-mini": 5,
+    "official": 100
 }
 
 model_scales = {
