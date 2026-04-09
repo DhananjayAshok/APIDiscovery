@@ -104,7 +104,14 @@ Hypothesis Conclusion: """
                     suggested_inputs = opt
                     break
         if suggested_inputs is None:  # then empty string
-            last_input_str = "You did not suggest any inputs. Do not do that again."
+            # one last effort, see if any of the options fit ()
+            for opt in options:
+                if "(" in opt:
+                    if ")" in opt[opt.index("("):]:
+                        suggested_inputs = opt[opt.index("("):opt.rindex(")")+1].strip()
+                        break
+            if suggested_inputs is None:
+                last_input_str = "You did not suggest any inputs. Do not do that again."
         # print(f"Suggested inputs: {suggested_inputs}")
         ret, err = runner.run_test_str(suggested_inputs)
         data.append([prompt, response + "\n[STOP]", err is not None])
@@ -424,6 +431,10 @@ def get_code_model(model_name):
     code_generation_model = parameters["code_generation_model_name"]
     if code_generation_model == "self":
         code_generation_model = model_name
+        if code_generation_model is None:
+            log_error(
+                f"Model name must be provided for code generation when code_generation_model_name is set to 'self'."
+            , parameters=parameters)
     return code_generation_model
 
 
@@ -434,26 +445,30 @@ def do_predict_code(
     prediction_column,
     load_name=None,
 ):
-    if load_name is None:
-        load_name = save_name
-    prediction_file = get_save_paths(load_name)
-    save_name = get_code_save_name(save_name)
     code_generation_model = get_code_model(model_name)
-    output_file = get_save_paths(save_name)
+    save_name = get_code_save_name(save_name)
+    output_file = get_save_paths(save_name)    
     if os.path.exists(output_file) and not override_gen:
         log_info(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
         return
-    df = load_dataset_df(prediction_file)
+    if model_name is not None:
+        if load_name is None:
+            load_name = save_name
+        prediction_file = get_save_paths(load_name)
+        df = load_dataset_df(prediction_file)
+    else:
+        parameters = load_parameters()
+        df = get_dataset("debug" if parameters["debug"] else "test", parameters=parameters)
+    
 
     def make_code_prompt(row):
-        true_description = None
         true_description = row["description"]
-        predicted_description = row["predicted_description"]
         func_header = row["header"]
         examples_str = get_prev_results_str(row["all_examples"])
         if prediction_column == "prediction":
+            predicted_description = row["predicted_description"]
             use_description = predicted_description
         elif prediction_column == "true":
             use_description = true_description
@@ -847,7 +862,7 @@ def predict_input(model_name, save_name, override_gen):
 
 
 @click.command()
-@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
+@click.option("--model_name", type=str, required=False, default=None, help="Name of the model to use.")
 @click.option(
     "--save_name", type=str, default=None, help="Name to save the predictions under."
 )
