@@ -563,6 +563,8 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                     # scale the reward to ensure it is never higher than the reward for getting a good hypothesis rating. 
                 else:
                     reward += neg(PARSE_FAILURE_PENALTY) # penalty for inputs that fail to run, encourages valid inputs.
+                    if "timeout" in str(err).lower():
+                        logger.error(f"TIMEOUT ERROR: \nFunction: \n{self.test_func_validated} \nSuggested Input: {suggested_inputs}")
                 if VERBOSE:
                     logger.info(f"Suggested Input: {suggested_inputs}, Output: {ret}, Error: {err}, Reward: {reward}")
                 try:
