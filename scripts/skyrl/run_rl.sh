@@ -24,10 +24,13 @@ if [ -z "$DATA_DIR" ]; then
   echo "Error: DATA_DIR is not set"
   exit 1
 fi
-if [ -z "$USE_VLLM" ]; then
-  echo "Error: USE_VLLM is not set"
+if [ -z "$JUDGE_INFERENCE" ]; then
+  echo "Error: JUDGE_INFERENCE is not set"
   exit 1
 fi
+
+export JUDGE_MODEL=$trainer_policy_model
+
 trainer_policy_model_dir=$storage_dir/models/rl_warmup/${trainer_policy_model#*/}/final_checkpoint
 # if the path does not exist, do the warmup
 if [ ! -d "$trainer_policy_model_dir" ]; then
@@ -68,6 +71,20 @@ get_gpus_from_1() {
     fi
     cuda_string="CUDA_VISIBLE_DEVICES=$(seq -s, 1 $((NUM_AVAILABLE_GPUS-1)))"
 }
+
+# if JUDGE_INFERENCE is vllm, set USE_VLLM to true and set the JUDGE_BASE_URL to http://localhost:8000/v1
+if [ "$JUDGE_INFERENCE" = "vllm" ]; then
+  export USE_VLLM=true
+  export JUDGE_BASE_URL="http://localhost:8000/v1"
+  export JUDGE_MODEL="model"
+elif [ "$JUDGE_INFERENCE" = "openai" ]; then
+  export USE_VLLM=false
+  export JUDGE_BASE_URL="None"
+  export JUDGE_MODEL="gpt-4o-mini"
+else
+  export USE_VLLM=false
+  export JUDGE_BASE_URL="https://openrouter.ai/api/v1"
+fi
 
 # if use_vllm
 if [ "$USE_VLLM" = true ]; then
@@ -145,7 +162,7 @@ if [ "$DEBUG" = true ]; then
     trainer.run_name="$run_name" \
     $@
 else
-  env HYDRA_FULL_ERROR=1 python -m examples.function_discovery.rl_main \
+  env HYDRA_FULL_ERROR=1 $cuda_string python -m examples.function_discovery.rl_main \
     data.train_data="['$DATA_DIR/train.parquet']" \
     data.val_data="['$DATA_DIR/val.parquet']" \
     trainer.algorithm.advantage_estimator="grpo" \

@@ -2,7 +2,7 @@
 
 declare -A ARGS
 ARGS["r"]="" # defaults to the model name if not provided
-ARGS["v"]=false # whether to use vllm or APIs for inference. 
+ARGS["j"]=vllm # whether to use vllm, openai or openrouter for judge model inference. 
 
 # Required arguments
 REQUIRED_ARGS=("m")
@@ -18,9 +18,9 @@ usage() {
 }
 
 # Parse flags
-while getopts ":m:r:v:" opt; do
+while getopts ":m:r:j:" opt; do
     case $opt in
-        m|r|v)
+        m|r|j)
             ARGS["$opt"]="$OPTARG"
             ;;
         \?)
@@ -57,12 +57,8 @@ python configs/create_env_file.py
 source configs/config.env
 
 # error out if use_vllm is not set to true or false
-if [ -z ${ARGS["v"]} ]; then
-    echo "Error: v is not set. Please set it to true or false."
-    exit 1
-fi
-if [ ${ARGS["v"]} != "true" ] && [ ${ARGS["v"]} != "false" ]; then
-    echo "Error: v must be set to true or false."
+if [ ${ARGS["j"]} != "vllm" ] && [ ${ARGS["j"]} != "openai" ] && [ ${ARGS["j"]} != "openrouter" ]; then
+    echo "Error: j must be set to vllm, openrouter or openai."
     exit 1
 fi
 
@@ -71,7 +67,7 @@ fi
 { echo "export DATA_DIR=$storage_dir/data/parquets/"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
 {  echo "export trainer_policy_model=${ARGS["m"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
 { echo "export run_name=${ARGS["r"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
-{ echo "export USE_VLLM=${ARGS["v"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
+{ echo "export JUDGE_INFERENCE=${ARGS["j"]}"; cat scripts/skyrl/final_run_rl.sh; } > temp.txt && mv temp.txt scripts/skyrl/final_run_rl.sh
 
 mkdir -p SkyRL/skyrl-train/examples/function_discovery/
 rm -rf SkyRL/skyrl-train/examples/function_discovery/*

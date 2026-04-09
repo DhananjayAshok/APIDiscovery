@@ -3,7 +3,7 @@ from urllib import response
 from skyrl_gym.envs.base_text_env import BaseTextEnv, BaseTextEnvStepOutput
 from typing import Dict, Any
 import re
-import multiprocessing
+import threading
 import time
 from ast import literal_eval
 from openai import OpenAI
@@ -30,7 +30,11 @@ def neg(x):
 
 class RunTestFunc:
     """
-    A class to run a test function defined in code. This differs from the one used in the main code, because of multiprocess spawn vs fork difference when using SkyRL.
+    A class to run a test function defined in code.
+    Uses threading instead of multiprocessing to avoid fork-from-thread issues when
+    SkyRL runs environments inside a ThreadPoolExecutor (max_env_workers > 0).
+    Forking from a multithreaded process (e.g. during training with CUDA) causes
+    child processes to deadlock on inherited mutex state, making every call time out.
     """
 
     def __init__(self, func_code: str, timeout=10):
@@ -46,79 +50,59 @@ class RunTestFunc:
         self.access_counter = 0
         self.attempted_inputs = []
         self.received_outputs = []
-        self.timeout = timeout        
+        self.timeout = timeout
         success = self.try_exec(func_code)
         if success:
             pass
         else:
             raise RuntimeError("Failed to exec function code, cannot initialize RunTestFunc.") # This should never happen, the dataset should be pre-filtered to ensure exec safety and correctness, but we add this check just in case.
 
-
-    @staticmethod
-    def exec_worker(func_code, queue):
-        """Helper worker to run exec and put the result in a queue."""
-        try:
-            exec(func_code, {"__builtins__": __builtins__})
-            queue.put(True) # runs
-        except Exception as e:
-            queue.put(False) # fails
-
     def try_exec(self, func_code):
-        """Tries to exec the given code in a separate process with a timeout."""
-        queue = multiprocessing.Queue()
-        p = multiprocessing.Process(target=self.exec_worker, args=(func_code, queue))
-        p.start()
-        p.join(timeout=self.timeout)
-        if p.is_alive():
-            p.terminate()
-            p.join()
-            return False
-        if not queue.empty():
-            return queue.get()
-        return False
-
-    def worker(self, func_code, args, queue):
-        """Helper worker to run the function and put the result in a queue."""
-        try:
-            context = {"__builtins__": __builtins__}
-            exec(func_code, context)
-            func = context["test_func"]
-            result = func(*args)
-            queue.put((result, None))
-        except Exception as e:
-            queue.put((None, str(e)))
+        """Tries to exec the given code in a daemon thread with a timeout."""
+        result = [False]
+        def worker():
+            try:
+                exec(func_code, {"__builtins__": __builtins__})
+                result[0] = True
+            except Exception:
+                result[0] = False
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        t.join(timeout=self.timeout)
+        if t.is_alive():
+            return False  # thread is still running (infinite loop etc.), treat as failure
+        return result[0]
 
     def run_test(self, *args):
         self.access_counter += 1
         self.attempted_inputs.append(args)
 
-        # Use a Queue to get the return value back from the child process
-        queue = multiprocessing.Queue()
-        p = multiprocessing.Process(
-            target=self.worker, args=(self.func_code, args, queue)
-        )
+        result = [None, "Unknown error during execution"]
+        def worker():
+            try:
+                context = {"__builtins__": __builtins__}
+                exec(self.func_code, context)
+                func = context["test_func"]
+                result[0] = func(*args)
+                result[1] = None
+            except Exception as e:
+                result[0] = None
+                result[1] = str(e)
 
-        p.start()
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
+        t.join(timeout=self.timeout)
 
-        # Wait for the process to complete or timeout
-        p.join(timeout=self.timeout)
+        if t.is_alive():
+            # Thread is still running after timeout — can't kill it, but it's a daemon
+            # so it won't block the process. Move on with a timeout error.
+            timeout_result = (None, f"Timeout: Function execution exceeded {self.timeout} seconds")
+            self.received_outputs.append(timeout_result)
+            return timeout_result
 
-        if p.is_alive():
-            # If the process is still running after 15s, kill it
-            p.terminate()
-            p.join()
-            self.received_outputs.append(
-                (None, f"Timeout: Function execution exceeded {self.timeout} seconds")
-            )
-            return None, f"Timeout: Function execution exceeded {self.timeout} seconds"
-
-        # If it finished, grab the result from the queue
-        if not queue.empty():
-            result = queue.get()
-            self.received_outputs.append(result)
-            return result
-        self.received_outputs.append((None, "Unknown error during execution"))
-        return None, "Unknown error during execution"
+        outcome = (result[0], result[1])
+        self.received_outputs.append(outcome)
+        return outcome
 
     def run_test_str(self, args_str: str):
         """
@@ -138,13 +122,6 @@ class RunTestFunc:
         return self.run_test(*args)
 
 
-@dataclass
-class LLMJudgeEnvConfig:
-    model: str = "gpt-4o-mini"
-    base_url = None # use "http://localhost:8000/v1" for vLLM servers, None for OpenAI API
-    unsupervised = False
-
-
 class FunctionDiscoveryEnv(BaseTextEnv):
     """
     Environment for multiplication.
@@ -158,7 +135,7 @@ class FunctionDiscoveryEnv(BaseTextEnv):
     So far, you have tried the following inputs: [PREV]
     You then came up with the following running hypothesis: [HYPOTHESIS]
 
-    Based on this, what kind of input will you use to test the function with next? Very briefly describe your next intended input only, and the properties it satisfies. How does this input help test the hypothesis? What is the expected output? Be extremely concise and short. 
+    Based on this, what kind of input will you use to test the function with next? Do not bother testing the function with inputs that are extremely large, or may trigger buffer overflows / memory issues. Very briefly describe your next intended input only, and the properties it satisfies. How does this input help test the hypothesis? What is the expected output? Be extremely concise and short. 
     Your response should be extremely short and concise, just a few sentences. After the response, say [STOP]
     Now provide your reasoning below and then say [STOP]
     Reasoning:"""
@@ -310,21 +287,21 @@ class FunctionDiscoveryEnv(BaseTextEnv):
         self.turn_kind = "input"
         self.current_hypothesis = "First Turn. No hypothesis yet."
         self.previous_reasoning = None
-        if LLMJudgeEnvConfig.base_url is not None:
-            openai_api_key = "DUMMY"
-            self.llm_judge_client = OpenAI(
-                api_key=openai_api_key,
-                base_url=LLMJudgeEnvConfig.base_url,
-            )                
-            self.model = "model"
-        else:
-            openai_api_key = os.getenv("OPENAI_API_KEY")
-            if openai_api_key is None:
-                raise ValueError("`OPENAI_API_KEY` must be set for Llm as a judge env")
-            self.llm_judge_client = OpenAI(
-                api_key=openai_api_key
-            )
-            self.model = LLMJudgeEnvConfig.model
+        base_url = os.getenv("JUDGE_BASE_URL")
+        self.model = os.getenv("JUDGE_MODEL")
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        openrouter_api_key= os.getenv("OPENROUTER_API_KEY")
+        if base_url.lower() == "none":
+            base_url = None
+            api_key = openai_api_key
+        elif "openrouter" in base_url:
+            api_key = openrouter_api_key
+        else:  # vLLM or other local server
+            api_key = "DUMMY"
+        self.llm_judge_client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+        )
 
 
     def judge_infer(self, prompt, max_new_tokens=300):
@@ -588,10 +565,14 @@ class FunctionDiscoveryEnv(BaseTextEnv):
                     reward += neg(PARSE_FAILURE_PENALTY) # penalty for inputs that fail to run, encourages valid inputs.
                 if VERBOSE:
                     logger.info(f"Suggested Input: {suggested_inputs}, Output: {ret}, Error: {err}, Reward: {reward}")
-                self.prev_results.append((suggested_inputs, ret, err))
-                last_input_str = (
-                    "Input: " + suggested_inputs + f" => Output: {ret}, Error: {err}"
-                )
+                try:
+                    last_input_str = (
+                        "Input: " + suggested_inputs + f" => Output: {ret}, Error: {err}"
+                    )
+                    self.prev_results.append((suggested_inputs, ret, err))
+                except:
+                    # the value was likely too large to convert to string, just say it was too large.
+                    last_input_str = "[SYSTEM ERROR]: The input was too large to compute. The function was not queried."
             prompt = (
                 self.reflection_prompt_filled.replace(
                     "[PREV]", self.get_prev_results_str()
