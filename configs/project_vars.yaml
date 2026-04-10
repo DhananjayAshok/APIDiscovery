@@ -7,7 +7,7 @@ WANDB_PROJECT: "APIDiscovery" # This is more for bash than for within python. Wi
 benchmark_creation_model: "meta-llama/Llama-3.1-8B-Instruct" # Model used to create benchmark tasks
 benchmark_creation_model_engine: "huggingface"
 benchmark_expansion_model: "meta-llama/Llama-3.1-70B-Instruct" # Model used to expand benchmark examples
-evaluation_model_name: "meta-llama/Llama-3.1-8B-Instruct" # Model used for evaluation
-code_generation_model_name: "self" # Model used for code generation
-input_output_prediction_model_name: "self" # Model used for input output prediction
+evaluation_model_name: "meta-llama/Llama-3.1-70B-Instruct" # Model used for evaluation
+code_generation_model_name: "Qwen/Qwen3-Coder-30B-A3B-Instruct" # Model used for code generation
+input_output_prediction_model_name: "meta-llama/Llama-3.1-8B-Instruct" # Model used for input output prediction
 

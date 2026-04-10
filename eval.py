@@ -67,15 +67,19 @@ def parse_eval(df):
 
 def score_description_predictions(
     *,
-    predictions_save_path,
-    save_name,
+    load_name,
     override_eval=False,
 ):
+    predictions_save_path = os.path.abspath(f"results/predictions/{load_name}.jsonl")
+    if not os.path.exists(predictions_save_path):
+        log_error(
+            f"Predictions file not found at {predictions_save_path}. Run the generation script first."
+        )
     parameters = load_parameters()
     model = parameters["evaluation_model_name"]
     model_save_name = model.split("/")[-1].strip()
     save_name = (
-        f"{save_name}_description_prediction_judge-{model_save_name}"
+        f"{load_name}_description_prediction_judge-{model_save_name}"
     )
     evaluation_path = os.path.abspath(f"results/evals/" + save_name + ".jsonl")
     skip = False
@@ -184,9 +188,14 @@ def evaluate_input_prediction(true_code, target_output, predicted_input):
         return False, pred_output
 
 
-def score_code(predictions_save_path, override_eval=False):
+def score_code(load_name, override_eval=False):
+    predictions_save_path = os.path.abspath(f"results/predictions/{load_name}.jsonl")
+    if not os.path.exists(predictions_save_path):
+        log_error(
+            f"Predictions file not found at {predictions_save_path}. Run the generation script first."
+        )    
     df = load_dataset_df(predictions_save_path)
-    eval_save_path = predictions_save_path.replace("predictions", "evals")
+    eval_save_path = os.path.abspath(f"results/evals/{load_name}.jsonl")
     if "predicted_code" not in df.columns:
         log_error(f"predicted_code not in df with columns: {df.columns}")
     if "true_test_outputs" in df.columns and not override_eval:
@@ -214,9 +223,14 @@ def score_code(predictions_save_path, override_eval=False):
     )
 
 
-def score_output_prediction(predictions_save_path, override_eval=False):
+def score_output_prediction(load_name, override_eval=False):
+    predictions_save_path = os.path.abspath(f"results/predictions/{load_name}.jsonl")
+    if not os.path.exists(predictions_save_path):
+        log_error(
+            f"Predictions file not found at {predictions_save_path}. Run the generation script first."
+        )
     df = load_dataset_df(predictions_save_path)
-    eval_save_path = predictions_save_path.replace("predictions", "evals")
+    eval_save_path = os.path.abspath(f"results/evals/{load_name}.jsonl")
     if "predicted_output" not in df.columns:
         log_error(f"predicted_output not in df with columns: {df.columns}")
     if "output_prediction_correct_micro" in df.columns and not override_eval:
@@ -252,9 +266,14 @@ def score_output_prediction(predictions_save_path, override_eval=False):
     )
 
 
-def score_input_prediction(predictions_save_path, override_eval=False):
+def score_input_prediction(load_name, override_eval=False):
+    predictions_save_path = os.path.abspath(f"results/predictions/{load_name}.jsonl")
+    if not os.path.exists(predictions_save_path):
+        log_error(
+            f"Predictions file not found at {predictions_save_path}. Run the generation script first."
+        )
     df = load_dataset_df(predictions_save_path)
-    eval_save_path = predictions_save_path.replace("predictions", "evals")
+    eval_save_path = os.path.abspath(f"results/evals/{load_name}.jsonl")
     if "predicted_input" not in df.columns:
         log_error(f"predicted_input not in df with columns: {df.columns}")
     if "input_prediction_correct_micro" in df.columns and not override_eval:
@@ -295,7 +314,7 @@ def score_input_prediction(predictions_save_path, override_eval=False):
 
 @click.command()
 @click.option(
-    "--save_name",
+    "--load_name",
     type=str,
     default=None,
     help="Name to use when saving evaluation results. If not provided, will be derived from the model name.",
@@ -306,57 +325,26 @@ def score_input_prediction(predictions_save_path, override_eval=False):
     help="Whether to override existing evaluation results.",
 )
 def eval_description(
-    save_name,
+    load_name,
     override_eval,
 ):
-    predictions_save_path = os.path.abspath(f"results/predictions/{save_name}.jsonl")
-    if not os.path.exists(predictions_save_path):
-        log_error(
-            f"Predictions file not found at {predictions_save_path}. Run the generation script first."
-        )
     score_description_predictions(
-        predictions_save_path=predictions_save_path,
-        save_name=save_name,
+        load_name=load_name,
         override_eval=override_eval,
     )
 
 
-def get_output_save_name(save_name):
-    parameters = load_parameters()
-    input_output_model = parameters["input_output_prediction_model_name"]
-    code_save_name = input_output_model.split("/")[-1].strip()
-    if input_output_model == "self":
-        code_save_name = "self"
-    save_name = f"{save_name}_output_prediction_judge-{code_save_name}"
-    return save_name
-
-
-def get_input_save_name(save_name):
-    parameters = load_parameters()
-    input_output_model = parameters["input_output_prediction_model_name"]
-    code_save_name = input_output_model.split("/")[-1].strip()
-    if input_output_model == "self":
-        code_save_name = "self"
-    save_name = f"{save_name}_input_prediction_judge-{code_save_name}"
-    return save_name
-
-
-def get_code_save_name(save_name):
-    parameters = load_parameters()
-    code_generation_model = parameters["code_generation_model_name"]
-    code_save_name = code_generation_model.split("/")[-1].strip()
-    if code_generation_model == "self":
-        code_save_name = "self"
-    save_name = f"{save_name}_code_prediction_judge-{code_save_name}"
-    return save_name
-
-
 @click.command()
 @click.option(
-    "--save_name",
+    "--load_name",
     type=str,
     default=None,
     help="Name to use when saving evaluation results. If not provided, will be derived from the model name.",
+)
+@click.option(
+    "--gold",
+    is_flag=True,
+    help="Whether the run used --gold.",
 )
 @click.option(
     "--override_eval",
@@ -364,27 +352,29 @@ def get_code_save_name(save_name):
     help="Whether to override existing evaluation results.",
 )
 def eval_code(
-    save_name,
+    load_name,
+    gold,
     override_eval,
 ):
-    save_name = get_code_save_name(save_name)
-    predictions_save_path = os.path.abspath(f"results/predictions/{save_name}.jsonl")
-    if not os.path.exists(predictions_save_path):
-        log_error(
-            f"Predictions file not found at {predictions_save_path}. Run the generation script first."
-        )
+    if gold:
+        load_name = f"gold_{load_name}"
     score_code(
-        predictions_save_path=predictions_save_path,
+        load_name=load_name,
         override_eval=override_eval,
     )
 
 
 @click.command()
 @click.option(
-    "--save_name",
+    "--load_name",
     type=str,
-    default=None,
-    help="Name to use when saving evaluation results. If not provided, will be derived from the model name.",
+    required=True,
+    help="Name of the predictions file to evaluate.",
+)
+@click.option(
+    "--gold",
+    is_flag=True,
+    help="Whether the run used --gold.",
 )
 @click.option(
     "--override_eval",
@@ -392,27 +382,29 @@ def eval_code(
     help="Whether to override existing evaluation results.",
 )
 def eval_output(
-    save_name,
+    load_name,
+    gold,
     override_eval,
 ):
-    save_name = get_output_save_name(save_name)
-    predictions_save_path = os.path.abspath(f"results/predictions/{save_name}.jsonl")
-    if not os.path.exists(predictions_save_path):
-        log_error(
-            f"Predictions file not found at {predictions_save_path}. Run the generation script first."
-        )
+    if gold:
+        load_name = f"gold_{load_name}"
     score_output_prediction(
-        predictions_save_path=predictions_save_path,
+        load_name=load_name,
         override_eval=override_eval,
     )
 
 
 @click.command()
 @click.option(
-    "--save_name",
+    "--load_name",
     type=str,
-    default=None,
-    help="Name to use when saving evaluation results. If not provided, will be derived from the model name.",
+    required=True,
+    help="Name of the predictions file to evaluate.",
+)
+@click.option(
+    "--gold",
+    is_flag=True,
+    help="Whether the run used --gold.",
 )
 @click.option(
     "--override_eval",
@@ -420,17 +412,14 @@ def eval_output(
     help="Whether to override existing evaluation results.",
 )
 def eval_input(
-    save_name,
+    load_name,
+    gold,
     override_eval,
 ):
-    save_name = get_input_save_name(save_name)
-    predictions_save_path = os.path.abspath(f"results/predictions/{save_name}.jsonl")
-    if not os.path.exists(predictions_save_path):
-        log_error(
-            f"Predictions file not found at {predictions_save_path}. Run the generation script first."
-        )
+    if gold:
+        load_name = f"gold_{load_name}"
     score_input_prediction(
-        predictions_save_path=predictions_save_path,
+        load_name=load_name,
         override_eval=override_eval,
     )
 

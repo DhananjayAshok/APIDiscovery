@@ -1,4 +1,4 @@
-source configs/config.env
+source scripts/utils.sh
 # error out if huggingface_repo_namespace not set:
 if [ -z "$huggingface_repo_namespace" ]; then
   echo "Error: huggingface_repo_namespace is not set. Please set it in configs/config.env"

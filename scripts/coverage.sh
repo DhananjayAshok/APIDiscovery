@@ -1,5 +1,4 @@
-source configs/config.env
-source setup/.venv/bin/activate
+source scripts/utils.sh
 
 currdir=$(pwd)
 tmp_dir=$storage_dir/tmp/coverage_files/

@@ -14,7 +14,6 @@ from utils import (
     get_lm,
     call_infer,
 )
-from eval import get_output_save_name, get_code_save_name, get_input_save_name
 import click
 from load_data import get_dataset, save_dataset_df, load_dataset_df
 import pandas as pd
@@ -428,55 +427,48 @@ def run_extract_code(
 
 
 def get_code_model(model_name):
-    parameters = load_parameters()
-    code_generation_model = parameters["code_generation_model_name"]
-    if code_generation_model == "self":
-        code_generation_model = model_name
-        if code_generation_model is None:
-            log_error(
-                f"Model name must be provided for code generation when code_generation_model_name is set to 'self'."
-            , parameters=parameters)
-    return code_generation_model
+    if model_name is None:
+        parameters = load_parameters()
+        code_generation_model = parameters["code_generation_model_name"]
+        return code_generation_model
+    else:
+        return model_name
 
 
 def do_predict_code(
     model_name,
     save_name,
+    load_name,
+    gold,
     override_gen,
-    prediction_column,
-    load_name=None,
 ):
+    if gold:
+        prediction_column = "description"
+        save_name = f"gold_{save_name}"
+    else:
+        prediction_column = "predicted_description"
     code_generation_model = get_code_model(model_name)
-    save_name = get_code_save_name(save_name)
+    if load_name is None:
+        parameters = load_parameters()
+        if parameters["debug"]:
+            log_warn(f"DEBUG MODE ACTIVE")
+        df = get_dataset("debug" if parameters["debug"] else "test", parameters=parameters)
+    else:
+        prediction_file = get_save_paths(load_name)
+        if not os.path.exists(prediction_file):
+            log_error(f"{prediction_file} not found")
+        df = load_dataset_df(prediction_file)
     output_file = get_save_paths(save_name)    
     if os.path.exists(output_file) and not override_gen:
         log_info(
             f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
-        return
-    if model_name is not None:
-        if load_name is None:
-            load_name = save_name
-        prediction_file = get_save_paths(load_name)
-        df = load_dataset_df(prediction_file)
-    else:
-        parameters = load_parameters()
-        df = get_dataset("debug" if parameters["debug"] else "test", parameters=parameters)
-    
+        return    
 
     def make_code_prompt(row):
-        true_description = row["description"]
         func_header = row["header"]
         examples_str = get_prev_results_str(row["all_examples"])
-        if prediction_column == "prediction":
-            predicted_description = row["predicted_description"]
-            use_description = predicted_description
-        elif prediction_column == "true":
-            use_description = true_description
-        else:
-            log_error(
-                f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'."
-            )
+        use_description = row[prediction_column]
 
         prompt = (
             code_prediction_prompt.replace("[DESCRIPTION]", use_description)
@@ -498,19 +490,28 @@ def do_predict_code(
 
 
 @click.command()
-@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
+@click.option("--model_name", type=str, default=None, help="Name of the model to use.")
 @click.option(
-    "--save_name", type=str, default=None, help="Name to save the predictions under."
+    "--save_name", type=str, required=True, help="Name to save the predictions under."
+)
+@click.option(
+    "--load_name", type=str, default=None, help="Name to load the predictions from."
+)
+@click.option(
+    "--gold", is_flag=True, help="Whether to use true descriptions."
 )
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def predict_code(model_name, save_name, override_gen):
+def predict_code(model_name, save_name, load_name, gold, override_gen):
+    if load_name is None and not gold:
+        log_error(f"if gold is none, load_name must be provided")
     do_predict_code(
         model_name,
         save_name,
+        load_name,
+        gold,
         override_gen,
-        prediction_column="prediction",
     )
 
 
@@ -628,22 +629,25 @@ def run_predict_output(
 
 
 def get_output_model(model_name):
-    parameters = load_parameters()
-    input_output_model = parameters["input_output_prediction_model_name"]
-    if input_output_model == "self":
-        input_output_model = model_name
-    return input_output_model
+    if model_name is None:
+        parameters = load_parameters()
+        return parameters["input_output_prediction_model_name"]
+    else:
+        return model_name
 
 
 def do_predict_output(
-    model_name, save_name, override_gen, prediction_column, load_name=None
+    model_name, save_name, load_name, gold, override_gen,
 ):
-    if load_name is None:
-        load_name = save_name
-
-    prediction_file = get_save_paths(load_name)
-    save_name = get_output_save_name(save_name)
+    if gold:
+        prediction_column = "description"
+        save_name = f"gold_{save_name}"
+    else:
+        prediction_column = "predicted_description"
     input_output_model = get_output_model(model_name)
+    prediction_file = get_save_paths(load_name)
+    if not os.path.exists(prediction_file):
+        log_error(f"{prediction_file} not found")
     output_file = get_save_paths(save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
@@ -653,18 +657,8 @@ def do_predict_output(
     df = load_dataset_df(prediction_file)
 
     def make_predict_output_prompt(row):
-        true_description = row["description"]
-        predicted_description = row["predicted_description"]
         examples_str = get_prev_results_str(row["all_examples"])
-        if prediction_column not in ["prediction", "true"]:
-            log_error(
-                f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'."
-            )
-        use_description = (
-            predicted_description
-            if prediction_column == "prediction"
-            else true_description
-        )
+        use_description = row[prediction_column]
         prompt = output_prediction_prompt.replace(
             "[DESCRIPTION]", use_description
         ).replace("[EXAMPLES]", examples_str)
@@ -765,21 +759,25 @@ def run_predict_input(
 
 
 def get_input_model(model_name):
-    parameters = load_parameters()
-    input_output_model = parameters["input_output_prediction_model_name"]
-    if input_output_model == "self":
-        input_output_model = model_name
-    return input_output_model
+    if model_name is None:
+        parameters = load_parameters()
+        return parameters["input_output_prediction_model_name"]
+    else:
+        return model_name
 
 
 def do_predict_input(
-    model_name, save_name, override_gen, prediction_column, load_name=None
+    model_name, save_name, load_name, gold, override_gen,
 ):
-    if load_name is None:
-        load_name = save_name
-    prediction_file = get_save_paths(load_name)
-    save_name = get_input_save_name(save_name)
+    if gold:
+        prediction_column = "description"
+        save_name = f"gold_{save_name}"
+    else:
+        prediction_column = "predicted_description"
     input_output_model = get_input_model(model_name)
+    prediction_file = get_save_paths(load_name)
+    if not os.path.exists(prediction_file):
+        log_error(f"{prediction_file} not found")
     output_file = get_save_paths(save_name)
     if os.path.exists(output_file) and not override_gen:
         log_info(
@@ -789,17 +787,9 @@ def do_predict_input(
     df = load_dataset_df(prediction_file)
 
     def make_predict_input_prompt(row):
-        true_description = row["description"]
-        description = row["predicted_description"]
         func_header = row["header"]
         examples_str = get_prev_results_str(row["all_examples"])
-        if prediction_column not in ["prediction", "true"]:
-            log_error(
-                f"Invalid prediction column: {prediction_column}. Must be either 'prediction' or 'true'."
-            )
-        use_description = (
-            description if prediction_column == "prediction" else true_description
-        )
+        use_description = row[prediction_column]
         prompt = (
             input_prediction_prompt.replace("[DESCRIPTION]", use_description)
             .replace("[HEADER]", func_header)
@@ -829,90 +819,50 @@ def do_predict_input(
 
 
 @click.command()
-@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
+@click.option("--model_name", type=str, default=None, help="Name of the model to use.")
 @click.option(
-    "--save_name", type=str, default=None, help="Name to save the predictions under."
+    "--save_name", type=str, required=True, help="Name to save the predictions under."
+)
+@click.option(
+    "--load_name", type=str, required=True, help="Name to load the predictions from."
+)
+@click.option(
+    "--gold", is_flag=True, help="Whether to use true descriptions."
 )
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def predict_output(model_name, save_name, override_gen):
+def predict_output(model_name, save_name, load_name, gold, override_gen):
     do_predict_output(
         model_name,
         save_name,
+        load_name,
+        gold,
         override_gen,
-        prediction_column="prediction",
     )
 
 
 @click.command()
-@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
+@click.option("--model_name", type=str, default=None, help="Name of the model to use.")
 @click.option(
-    "--save_name", type=str, default=None, help="Name to save the predictions under."
+    "--save_name", type=str, required=True, help="Name to save the predictions under."
+)
+@click.option(
+    "--load_name", type=str, required=True, help="Name to load the predictions from."
+)
+@click.option(
+    "--gold", is_flag=True, help="Whether to use true descriptions."
 )
 @click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
-def predict_input(model_name, save_name, override_gen):
+def predict_input(model_name, save_name, load_name, gold, override_gen):
     do_predict_input(
         model_name,
         save_name,
+        load_name,
+        gold,
         override_gen,
-        prediction_column="prediction",
-    )
-
-
-@click.command()
-@click.option("--model_name", type=str, required=False, default=None, help="Name of the model to use.")
-@click.option(
-    "--save_name", type=str, default=None, help="Name to save the predictions under."
-)
-@click.option(
-    "--override_gen", is_flag=True, help="Whether to override existing generation."
-)
-def predict_gold_code(model_name, save_name, override_gen):
-    do_predict_code(
-        model_name,
-        "gold_" + save_name.split("_", 1)[1],
-        override_gen,
-        prediction_column="true",
-        load_name=save_name,
-    )
-
-
-@click.command()
-@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
-@click.option(
-    "--save_name", type=str, default=None, help="Name to save the predictions under."
-)
-@click.option(
-    "--override_gen", is_flag=True, help="Whether to override existing generation."
-)
-def predict_gold_output(model_name, save_name, override_gen):
-    do_predict_output(
-        model_name,
-        "gold_" + save_name.split("_", 1)[1],
-        override_gen,
-        prediction_column="true",
-        load_name=save_name,
-    )
-
-
-@click.command()
-@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
-@click.option(
-    "--save_name", type=str, default=None, help="Name to save the predictions under."
-)
-@click.option(
-    "--override_gen", is_flag=True, help="Whether to override existing generation."
-)
-def predict_gold_input(model_name, save_name, override_gen):
-    do_predict_input(
-        model_name,
-        "gold_" + save_name.split("_", 1)[1],
-        override_gen,
-        prediction_column="true",
-        load_name=save_name,
     )
 
 
@@ -926,9 +876,6 @@ cli.add_command(run_interactive, name="interactive")
 cli.add_command(predict_code, name="code")
 cli.add_command(predict_output, name="output")
 cli.add_command(predict_input, name="input")
-cli.add_command(predict_gold_code, name="gold_code")
-cli.add_command(predict_gold_output, name="gold_output")
-cli.add_command(predict_gold_input, name="gold_input")
 cli.add_command(create_interactive_training_data, name="create")
 
 

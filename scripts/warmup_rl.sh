@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
-source configs/config.env
-source setup/.venv/bin/activate
+source scripts/utils.sh
 if [[ -z "$storage_dir" ]]; then
     echo "Error: storage_dir is not set. Please set it in configs/config.env."
     exit 1

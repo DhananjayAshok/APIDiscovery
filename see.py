@@ -497,14 +497,26 @@ def get_file_details(path):
 
 @click.command()
 @click.option("--n", default=1, help="Number of random samples to display")
+@click.option(
+    "--task",
+    default="description",
+    type=click.Choice(["description", "code", "input", "output"]),
+    help="Task to visualize",
+)
 @click.option("--method", default="interactive", help="Method to filter by")
 @click.option("--judge", default=None, help="Judge to filter by")
 @click.option("--model", default="Meta-Llama-3-8B-Instruct", help="Model to filter by")
-def d(n, method, judge, model):
+def d(n, task, method, judge, model):
+    task_str = f"{task}_prediction"
     if judge is None:
-        judge = parameters["evaluation_model_name"]
+        if task == "description":
+            judge = parameters["evaluation_model_name"]
+        elif task == "code":
+            judge = parameters["code_generation_model_name"]
+        else:  # input, output
+            judge = parameters["input_output_prediction_model_name"]
     judge = judge.split("/")[-1]
-    path = f"results/evals/{method}_{model}_description_prediction_judge-{judge}.jsonl"
+    path = f"results/evals/{method}_{model}_{task_str}_judge-{judge}.jsonl"
     if not os.path.exists(path):
         log_error(f"File not found: {path}", parameters=parameters)
     df = pd.read_json(path, lines=True)
@@ -586,6 +598,7 @@ def stats_all(kind, method, model):
             if stat_type == "description":
                 stats = Stats.description(df)
             elif stat_type == "code":
+                breakpoint()
                 stats = Stats.code(df)
             elif stat_type == "output_prediction":
                 stats = Stats.output_prediction(df)
