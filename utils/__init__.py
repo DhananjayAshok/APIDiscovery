@@ -209,6 +209,8 @@ You are given a Python function with the following header:
 [HEADER]
 Your task is to try various inputs to discover what this function does.
 
+[CRITIQUE]
+
 So far, you have tried the following inputs: [PREV]
 You then came up with the following running hypothesis: [HYPOTHESIS]
 
@@ -218,12 +220,17 @@ Now provide your reasoning below and then say [STOP]
 Reasoning:"""
 
 
-def get_interactive_starting_prompt(func_header, previous_examples, full_fill=True):
+def get_interactive_starting_prompt(func_header, previous_examples, full_fill=True, critique=None):
     prev_str = get_prev_results_str(previous_examples, max_previous_results=None)
     prompt = first_reasoning_prompt.replace("[HEADER]", func_header)
     if full_fill:
         prompt = prompt.replace("[PREV]", prev_str)
         prompt = prompt.replace("[HYPOTHESIS]", "Not yet formed")
+    if critique is not None:
+        critique = "There is an additional piece of guidence based on your prior experience: " + critique
+    else:
+        critique = ""
+    prompt = prompt.replace("[CRITIQUE]", critique)
     return prompt
 
 

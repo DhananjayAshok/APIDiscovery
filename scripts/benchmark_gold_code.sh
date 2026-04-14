@@ -4,6 +4,7 @@ if [ -z "$code_generation_model_name" ]; then
     exit 1
 fi
 echo "Code generation model: $code_generation_model_save_name"
+gold_task_name="code_prediction_judge-$code_generation_model_save_name"
 
-python baselines.py code --save_name "official" --gold --override_gen
-python eval.py code --load_name "official" --gold --override_eval
+echo python baselines.py code --save_name "$gold_task_name" --gold --override_gen
+echo python eval.py code --load_name "$gold_task_name" --gold --override_eval

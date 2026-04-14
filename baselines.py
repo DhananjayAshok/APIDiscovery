@@ -32,14 +32,17 @@ def word_count(s):
     return len(s.split())
 
 
-def interactive(model, runner, header, train_examples, max_iterations=20, max_previous_results=10
+def interactive(model, runner, header, train_examples, max_iterations=20, max_previous_results=10, prev_hypothesis=None, critique=None
 ):
     prev_results = []
     for example in train_examples:
         prev_results.append((example[0], example[1], None))
-    reasoning_prompt = get_interactive_starting_prompt(header, prev_results, max_previous_results)
+    reasoning_prompt = get_interactive_starting_prompt(header, prev_results, max_previous_results, critique=critique)
     concluded = False
-    hypothesis = "Not yet formed"
+    if prev_hypothesis is None:
+        hypothesis = "Not yet formed"
+    else:
+        hypothesis = prev_hypothesis
     input_prompt = f"""
 You are given a Python function with the following header:
 {header}
@@ -166,6 +169,96 @@ Hypothesis Conclusion: """
     "--save_name", type=str, default=None, help="Name to save the predictions under."
 )
 @click.option(
+    "--load_name", type=str, default=None, help="Name to save the predictions under."
+)
+@click.option(
+    "--override_gen", is_flag=True, help="Whether to override existing generation."
+)
+def run_memory(model_name, save_name, load_name, override_gen):
+    parameters = load_parameters()
+    load_path = get_save_paths(load_name, parameters)
+    output_file = get_save_paths(save_name, parameters)
+    if os.path.exists(output_file) and not override_gen:
+        log_info(
+            f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
+        )
+        return
+    checkpoint_path = output_file.replace(".jsonl", "_checkpoint.jsonl")
+    output_column = "predicted_description"
+    start_index = 0
+    model = get_lm(model_name)
+    dataset = load_dataset_df(load_path)
+    dataset["prev_hypothesis"] = dataset["predicted_description"]
+    dataset["prev_examples"] = dataset["all_examples"]
+    columns = [
+        "n_queries",
+        "concluded",
+        "predicted_description",
+        "steps",
+        "all_examples"
+    ]
+    for column in columns:
+        dataset[column] = None
+    start_index = 0
+    if os.path.exists(checkpoint_path) and not override_gen:
+        log_info(f"Checkpoint file {checkpoint_path} found, resuming from checkpoint.")
+        dataset = load_dataset_df(checkpoint_path)
+        # look from the end and identify the first non None predicted_description and set start_index to that + 1
+        description_nans = dataset["predicted_description"].isna()
+        for i in range(len(dataset) - 1, -1, -1):
+            if not description_nans[i]:
+                start_index = i + 1
+                break
+        if start_index >= len(dataset):
+            log_info(
+                f"All rows in checkpoint file {checkpoint_path} already have predictions, skipping generation. Run with override_gen=True to re-evaluate."
+            )
+            save_dataset_df(dataset, save_path)
+            log_info(f"Saved predictions to {save_path}")
+            return
+    dataset["concluded"] = dataset["concluded"].astype(bool)
+    for i, row in tqdm(
+        dataset.iterrows(),
+        total=len(dataset),
+        desc=f"Evaluating {save_name}",
+    ):
+        if i < start_index:
+            continue
+        critique = get_critique_from_row(model, row)
+        row["critique"] = critique        
+        predicted_description, n_queries, concluded, step_df, all_examples = get_interactive_from_row(model, row)
+        if predicted_description is None:
+            continue
+        steps = step_df.to_dict(orient="records")
+        repr_examples = []
+        for suggested_input, output, error in all_examples:
+            try:
+                repr_examples.append(
+                    (repr(suggested_input), repr(output), repr(error))
+                )
+            except:
+                continue
+        dataset.at[i, "predicted_description"] = predicted_description
+        dataset.at[i, "n_queries"] = n_queries
+        dataset.at[i, "concluded"] = bool(concluded)
+        dataset.at[i, "steps"] = steps
+        dataset.at[i, "all_examples"] = repr_examples
+        save_dataset_df(dataset.copy(), checkpoint_path, verbose=False)
+    save_dataset_df(dataset, save_path)
+    if os.path.exists(checkpoint_path):
+        os.remove(checkpoint_path)
+    log_info(f"Saved predictions to {save_path}")
+    return save_path
+
+
+
+
+@click.command()
+@click.option("--model_name", type=str, required=True, help="Name of the model to use.")
+@click.option(
+    "--save_name", type=str, default=None, help="Name to save the predictions under."
+)
+@click.option(
     "--override_gen", is_flag=True, help="Whether to override existing generation."
 )
 def run_incontext(model_name, save_name, override_gen):
@@ -189,16 +282,88 @@ def run_incontext(model_name, save_name, override_gen):
         log_info(f"Saved predictions to {output_file}")
         return
 
+
+
+def critique(model, train_dataset, train_idx):
+    critique_prompt = """
+    You were given the task of discovering what a function does by trying various inputs. 
+    The true functionality was: [TRUE]
+
+    This could have be seen with examples such as: [TRUE_EXAMPLES]
+
+    You tried a different set of examples: [PREV_EXAMPLES]
+
+    Based on which you predicted that the function does: [PREDICTED]
+
+    Was your prediction accurate? If you misunderstood the function somehow, what was lacking in the set of input examples you used to explore the function?
+
+    Write a short and concise critique of your exploration examples that is specific, and mentions the high level thinking strategies that you should have adopted to more reliably come to the true answer. 
+
+    Give your response in the following format:
+
+    Critique: <short and precise critique here with comments on how to improve>
+    [STOP]
+    Now give your critique. 
+
+    Critique: 
+    """
+    train_row = train_dataset.loc[train_idx]
+    hypothesis, access_counter, concluded, steps, prev_results = get_interactive_from_row(model, train_row)
+    prev_results_str = get_prev_results_str(prev_results)
+    test_examples = []
+    for inp, out in train_row["test_examples"]:
+        test_examples.append((inp, out, None))
+    true_results = get_prev_results_str(test_examples)
+    true_description = train_row["description"]
+    critique_prompt = critique_prompt.replace("[TRUE]", true_description).replace("[TRUE_EXAMPLES]", true_results).replace("[PREV_EXAMPLES]", prev_results_str).replace("[PREDICTED]", hypothesis)
+    model_critique = model.infer(critique_prompt, max_new_tokens=300)
+    return model_critique
+
+
+def get_critique_from_row(model, row):
+    dataset = get_dataset("train")
+    use_idxes = row["retrieved_train_indices"]
+    critiques = []
+    for idx in use_idxes:
+        ind_critique = critique(model, dataset, idx)
+        critiques.append(ind_critique)
+    if len(critiques) > 1:
+        summarize_prompt = """
+        Here are several critiques you recieved while exploring inputs to test and understand a black box function:
+        [CRITIQUES]
+
+        Given this, write yourself a single, unified critique that organizes the previous feedback and consolidates it in a concise and helpful manner
+
+        Your response should be in the format:
+        Critique: Short and concise summary of the previous feedback
+        [STOP]
+
+        Now give your consolidated critique. 
+        Critique:
+        """
+        critiques_str = "\n".join([f"{i+1}. {c}" for i, c in enumerate(critiques)])
+        summarize_prompt = summarize_prompt.replace("[CRITIQUES]", critiques_str)
+        return model.infer(summarize_prompt, max_new_tokens=300)
+    else:
+        return critiques[0]
+
+
 def get_interactive_from_row(model, row):
     test_func_str = row["test_func_validated"]
     train_examples = row["train_examples"]
     header = row["header"]
+    prev_hypothesis = None
+    critique = None
     try:
         runner = RunTestFunc(test_func_str)
     except Exception as e:
         log_warn(f"Error creating runner for test_func {test_func_str}")
         return None, None, None, None, None
-    return interactive(model, runner, header, train_examples)
+    if "critique" in row:
+        prev_hypothesis = row["prev_hypothesis"]
+        critique = row["critique"]
+        train_examples = row["prev_examples"]    
+    return interactive(model, runner, header, train_examples, prev_hypothesis=prev_hypothesis, critique=critique)
 
 
 @click.command()
@@ -873,6 +1038,7 @@ def cli():
 
 cli.add_command(run_incontext, name="incontext")
 cli.add_command(run_interactive, name="interactive")
+cli.add_command(run_memory, name="memory")
 cli.add_command(predict_code, name="code")
 cli.add_command(predict_output, name="output")
 cli.add_command(predict_input, name="input")

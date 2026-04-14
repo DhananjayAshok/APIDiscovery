@@ -10,7 +10,7 @@ import numpy as np
 
 
 
-method_orders = {"incontext": 0, "ft": 1, "interactive": 2, "rl": 3, "gold": 4}
+method_orders = {"incontext": 0, "ft": 1, "interactive": 2, "rl": 3, "memory": 4, "gold": 100}
 
 model_aliases = {
     "Llama-3.2-1B": "Llama3-1B",
@@ -333,7 +333,7 @@ class Stats:
         # score_distribution = df["score"].value_counts().sort_index()
         # log_info(f"Score Distribution:\n{score_distribution}")
         if len(df["score"].tolist()) < 740:
-             breakpoint()
+            breakpoint()
         return {
             "avg_score": avg_score,
             "std_score": std_score,
@@ -378,9 +378,14 @@ class Stats:
         log_info(f"Saved {title} stats dataframe with {len(df)} rows to results/figure_dfs/{title}_stats.jsonl")
         do_test(df, "all_exact_matches", title)
 
-    def save_code(eval_dicts, path_dicts):
+    def save_code_task(eval_dicts, path_dicts):
         Stats.save_exact_match(
-            "code", eval_dicts, path_dicts,
+            "code_task", eval_dicts, path_dicts,
+        )
+
+    def save_code_eval(eval_dicts, path_dicts):
+        Stats.save_exact_match(
+            "code_eval", eval_dicts, path_dicts,
         )
 
     def save_output_prediction(eval_dicts, path_dicts):
@@ -455,24 +460,25 @@ class Stats:
 
 
 def is_valid_file(path):
-    # description pattern is method_model-judge-judgemodel.jsonl
-    description_judge_model = parameters["evaluation_model_name"].split("/")[-1]
-    code_judge_model = parameters["code_generation_model_name"].split("/")[-1]
-    input_output_judge_model = parameters["input_output_prediction_model_name"].split(
-        "/"
-    )[-1]
-    completion_column = None
     kind = None
-    if f"description_prediction_judge-{description_judge_model}.jsonl" in path:
+    if f"description_prediction_judge" in path:
         kind = "description"
-    elif f"code_prediction_judge-{code_judge_model}.jsonl" in path:
-        kind = "code"
-    elif f"output_prediction_judge-{input_output_judge_model}.jsonl" in path:
-        kind = "output_prediction"
-    elif f"input_prediction_judge-{input_output_judge_model}.jsonl" in path:
-        kind = "input_prediction"
-    #print(path)
-    #breakpoint()
+    elif f"code_prediction_judge" in path:
+        kind = "code_eval"
+    if kind is None:
+        return None
+    description_prediction_judge = parameters["evaluation_model_name"].split("/")[-1]
+    code_prediction_model = parameters["code_generation_model_name"]
+    code_prediction_model_save_name = code_prediction_model.split("/")[-1]
+    if "gold" in path:
+        return kind
+    else:
+        if kind == "description":
+            if description_prediction_judge not in path:
+                return None
+        elif kind == "code_eval":
+            if code_prediction_model_save_name not in path:
+                return "code_task"
     return kind
 
 
@@ -491,7 +497,14 @@ def get_file_details(path):
             break
     if not flag:
         return None
-    model_name = rest_of.split("_")[0]
+    if "gold" in path: # then model name is actually the judge
+        model_name = path.split("_judge")[-1].strip(".jsonl").strip("-")
+        code_prediction_model = parameters["code_generation_model_name"]
+        code_prediction_model_save_name = code_prediction_model.split("/")
+        if model_name == code_prediction_model_save_name:
+            model_name = "official"
+    else:
+        model_name = rest_of.split("_")[0]
     return {"method": method, "model": model_name, "task": task}
 
 
@@ -555,9 +568,8 @@ def stats_all(kind, method, model):
     figure_path = f"results/figures/"
     valid_stats = {
         "description": [],
-        "code": [],
-        "output_prediction": [],
-        "input_prediction": [],
+        "code_task": [],
+        "code_eval": [],        
     }
     path_mapper = {}
     df_mapper = {}
@@ -577,7 +589,6 @@ def stats_all(kind, method, model):
             nonjudge_part = file_path.split("judge")[0]
             if model is not None and model not in nonjudge_part:
                 continue
-
         stat_type = is_valid_file(file)
         if stat_type and stat_type in allowed_kinds:
             valid_stats[stat_type].append(file_path)
@@ -597,8 +608,7 @@ def stats_all(kind, method, model):
             df = pd.read_json(file, lines=True)
             if stat_type == "description":
                 stats = Stats.description(df)
-            elif stat_type == "code":
-                breakpoint()
+            elif stat_type in ["code_task", "code_eval"]:
                 stats = Stats.code(df)
             elif stat_type == "output_prediction":
                 stats = Stats.output_prediction(df)
@@ -611,8 +621,10 @@ def stats_all(kind, method, model):
                 df_mapper[file] = stats
         if stat_type == "description":
             Stats.save_description(df_mapper, path_mapper)
-        if stat_type == "code":
-            Stats.save_code(df_mapper, path_mapper)
+        elif stat_type == "code_task":
+            Stats.save_code_task(df_mapper, path_mapper)
+        elif stat_type == "code_eval":
+            Stats.save_code_eval(df_mapper, path_mapper)
         elif stat_type == "output_prediction":
             Stats.save_output_prediction(df_mapper, path_mapper)
         elif stat_type == "input_prediction":

@@ -14,8 +14,8 @@ for model_name in "${models[@]}"; do
     model_path=$storage_dir/models/rl/$model_save_name/final_checkpoint
     save_name="rl_$model_save_name"
     echo "Testing: $save_name on dataset"
-    python baselines.py interactive --model_name $model_path --save_name "$save_name" # --override_gen
-    python eval.py description --load_name $save_name # --override_eval
+    python baselines.py interactive --model_name $model_path --save_name "$save_name" --override_gen
+    python eval.py description --load_name $save_name --override_eval
 
     # Eval the code with the official model
     code_eval_name="${save_name}_code_prediction_judge-$code_generation_model_save_name"
