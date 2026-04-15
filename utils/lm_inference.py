@@ -947,7 +947,7 @@ def get_lm(model_name):
     if any_in(model_name, ["gpt-4", "gpt-3.5", "gpt-5"]):
         model_engine = "openai"
     elif any_in(model_name, ["claude", "opus", "sonnet", "haiku"]):
-        model_engine = "anthropic"
+        model_engine = "openrouter"
     elif any_in(model_name, ["gemini", "minimax", "deepseek-v3.2", "kimi-k2.5", "gpt-oss", "glm"]):
         model_engine = "openrouter"
     else:

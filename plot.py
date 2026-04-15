@@ -3,10 +3,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import os
 import click
-from utils import Plotter
+from utils import Plotter, load_parameters
 
-figure_df_dir = "results/figure_dfs/"
+parameters = load_parameters()
 
+
+figure_df_dir = f"{parameters['results_dir']}/figure_dfs/"
 
 plotter = Plotter()
 

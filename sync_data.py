@@ -16,7 +16,7 @@ def create_hub_repo(parameters, private):
     Create a new repo on the Hugging Face Hub.
     """
     repo_namespace = parameters["huggingface_repo_namespace"]
-    repo_name = parameters["huggingface_repo_name"]
+    repo_name = parameters["huggingface_storage_name"]
     repo_id = f"{repo_namespace}/{repo_name}"
     api = parameters["api"]
     api.create_repo(
@@ -34,7 +34,7 @@ def setup_sync(parameters):
     Set up the local sync directory to sync with the specified repo on the Hugging Face Hub.
     """
     repo_namespace = parameters["huggingface_repo_namespace"]
-    repo_name = parameters["huggingface_repo_name"]    
+    repo_name = parameters["huggingface_storage_name"]    
     repo_id = f"{repo_namespace}/{repo_name}"
     sync_dir = os.path.abspath(parameters["sync_dir"])
     if not os.path.exists(sync_dir):
@@ -52,7 +52,7 @@ def push_data_to_hub(parameters):
         1. Check if repo exists. If it does, first pull and write it to sync directory (i.e. root_dir)
     """
     repo_namespace = parameters["huggingface_repo_namespace"]
-    repo_name = parameters["huggingface_repo_name"]
+    repo_name = parameters["huggingface_storage_name"]
     api = parameters["api"]
     sync_dir = os.path.abspath(parameters["sync_dir"])
     repo_id = f"{repo_namespace}/{repo_name}"
@@ -62,7 +62,7 @@ def push_data_to_hub(parameters):
 
 @click.group()
 @click.option("--huggingface_repo_namespace", type=str, default=None, help="The namespace (user or org) on the hub where the repo is located.")
-@click.option("--huggingface_repo_name", type=str, default=None, help="The name of the repo on the hub.")
+@click.option("--huggingface_storage_name", type=str, default=None, help="The name of the storage on the hub.")
 @click.pass_context
 def main(ctx, **input_parameters):
     if "huggingface_repo_namespace" not in loaded_parameters:
@@ -70,11 +70,11 @@ def main(ctx, **input_parameters):
             loaded_parameters["huggingface_repo_namespace"] = input_parameters["huggingface_repo_namespace"]
         else:
             log_error("huggingface_repo_namespace must be specified either in the config file or as a command line argument.", loaded_parameters)
-    if "huggingface_repo_name" not in loaded_parameters:
-        if input_parameters["huggingface_repo_name"] is not None:
-            loaded_parameters["huggingface_repo_name"] = input_parameters["huggingface_repo_name"]
+    if "huggingface_storage_name" not in loaded_parameters:
+        if input_parameters["huggingface_storage_name"] is not None:
+            loaded_parameters["huggingface_storage_name"] = input_parameters["huggingface_storage_name"]
         else:
-            log_error("huggingface_repo_name must be specified either in the config file or as a command line argument.", loaded_parameters)
+            log_error("huggingface_storage_name must be specified either in the config file or as a command line argument.", loaded_parameters)
     compute_secondary_parameters(loaded_parameters)
     api = HfApi()
     loaded_parameters["api"] = api

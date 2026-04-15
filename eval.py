@@ -37,7 +37,6 @@ True Function Description: [TRUE]
 Hypothesized Description: [HYPOTHESIS]
 Explanation (very short):"""
 
-os.makedirs("results/evals", exist_ok=True)
 
 
 def parse_score(output):
@@ -70,18 +69,20 @@ def score_description_predictions(
     load_name,
     override_eval=False,
 ):
-    predictions_save_path = os.path.abspath(f"results/predictions/{load_name}.jsonl")
+    parameters = load_parameters()
+    results_dir = parameters["results_dir"]
+    os.makedirs(f"{results_dir}/evals", exist_ok=True)
+    predictions_save_path = os.path.abspath(f"{results_dir}/predictions/{load_name}.jsonl")
     if not os.path.exists(predictions_save_path):
         log_error(
             f"Predictions file not found at {predictions_save_path}. Run the generation script first."
         )
-    parameters = load_parameters()
     model = parameters["evaluation_model_name"]
     model_save_name = model.split("/")[-1].strip()
     save_name = (
         f"{load_name}_description_prediction_judge-{model_save_name}"
     )
-    evaluation_path = os.path.abspath(f"results/evals/" + save_name + ".jsonl")
+    evaluation_path = os.path.abspath(f"{results_dir}/evals/{save_name}.jsonl")
     skip = False
     if not override_eval:
         if os.path.exists(evaluation_path):
@@ -189,13 +190,16 @@ def evaluate_input_prediction(true_code, target_output, predicted_input):
 
 
 def score_code(load_name, override_eval=False):
-    predictions_save_path = os.path.abspath(f"results/predictions/{load_name}.jsonl")
+    parameters = load_parameters()
+    results_dir = parameters["results_dir"]
+    os.makedirs(f"{results_dir}/evals", exist_ok=True)
+    predictions_save_path = os.path.abspath(f"{results_dir}/predictions/{load_name}.jsonl")
     if not os.path.exists(predictions_save_path):
         log_error(
             f"Predictions file not found at {predictions_save_path}. Run the generation script first."
-        )    
+        )
     df = load_dataset_df(predictions_save_path)
-    eval_save_path = os.path.abspath(f"results/evals/{load_name}.jsonl")
+    eval_save_path = os.path.abspath(f"{results_dir}/evals/{load_name}.jsonl")
     if "predicted_code" not in df.columns:
         log_error(f"predicted_code not in df with columns: {df.columns}")
     if "true_test_outputs" in df.columns and not override_eval:
@@ -224,13 +228,16 @@ def score_code(load_name, override_eval=False):
 
 
 def score_output_prediction(load_name, override_eval=False):
-    predictions_save_path = os.path.abspath(f"results/predictions/{load_name}.jsonl")
+    parameters = load_parameters()
+    results_dir = parameters["results_dir"]
+    os.makedirs(f"{results_dir}/evals", exist_ok=True)
+    predictions_save_path = os.path.abspath(f"{results_dir}/predictions/{load_name}.jsonl")
     if not os.path.exists(predictions_save_path):
         log_error(
             f"Predictions file not found at {predictions_save_path}. Run the generation script first."
         )
     df = load_dataset_df(predictions_save_path)
-    eval_save_path = os.path.abspath(f"results/evals/{load_name}.jsonl")
+    eval_save_path = os.path.abspath(f"{results_dir}/evals/{load_name}.jsonl")
     if "predicted_output" not in df.columns:
         log_error(f"predicted_output not in df with columns: {df.columns}")
     if "output_prediction_correct_micro" in df.columns and not override_eval:
@@ -267,13 +274,16 @@ def score_output_prediction(load_name, override_eval=False):
 
 
 def score_input_prediction(load_name, override_eval=False):
-    predictions_save_path = os.path.abspath(f"results/predictions/{load_name}.jsonl")
+    parameters = load_parameters()
+    results_dir = parameters["results_dir"]
+    os.makedirs(f"{results_dir}/evals", exist_ok=True)
+    predictions_save_path = os.path.abspath(f"{results_dir}/predictions/{load_name}.jsonl")
     if not os.path.exists(predictions_save_path):
         log_error(
             f"Predictions file not found at {predictions_save_path}. Run the generation script first."
         )
     df = load_dataset_df(predictions_save_path)
-    eval_save_path = os.path.abspath(f"results/evals/{load_name}.jsonl")
+    eval_save_path = os.path.abspath(f"{results_dir}/evals/{load_name}.jsonl")
     if "predicted_input" not in df.columns:
         log_error(f"predicted_input not in df with columns: {df.columns}")
     if "input_prediction_correct_micro" in df.columns and not override_eval:

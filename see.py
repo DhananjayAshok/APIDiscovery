@@ -24,8 +24,11 @@ model_aliases = {
     "gpt-5.4-mini": "GPT-5-mini",
     "Qwen3-Coder-30B-A3B-Instruct": "Qwen3-Coder-30B",
     "granite-8b-code-instruct-128k": "Granite-8B",
-    "glm-5-turbo": "GLM-5-turbo",
+    "glm-5-turbo": "GLM-5-Turbo",
     "deepseek-v3.2": "Deepseek-v3.2",
+    "gemini-3.1-flash-lite-preview": "Gemini-3-Flash",
+    "claude-opus-4.6": "Opus-4",
+    "claude-sonnet-4.6": "Sonnet-4",
 }
 
 model_orders = {
@@ -36,9 +39,14 @@ model_orders = {
     "Qwen3-8B": 1.25,
     "Qwen3-32B": 1.5,
     "Granite-8B": 2,
+    "GLM-5-Turbo": 2.5,
+    "Deepseek-v3.2": 2.5,
     "GPT-4o-mini": 3,
     "GPT-4o": 4,
     "GPT-5-mini": 5,
+    "Gemini-3-Flash": 6,
+    "Sonnet-4": 7,
+    "Opus-4": 8,
     "official": 100
 }
 
