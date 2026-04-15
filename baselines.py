@@ -177,13 +177,13 @@ Hypothesis Conclusion: """
 def run_memory(model_name, save_name, load_name, override_gen):
     parameters = load_parameters()
     load_path = get_save_paths(load_name, parameters)
-    output_file = get_save_paths(save_name, parameters)
-    if os.path.exists(output_file) and not override_gen:
+    save_path = get_save_paths(save_name, parameters)
+    if os.path.exists(save_path) and not override_gen:
         log_info(
-            f"Output file {output_file} already exists, skipping generation. Run with override_gen=True to re-evaluate."
+            f"Output file {save_path} already exists, skipping generation. Run with override_gen=True to re-evaluate."
         )
         return
-    checkpoint_path = output_file.replace(".jsonl", "_checkpoint.jsonl")
+    checkpoint_path = save_path.replace(".jsonl", "_checkpoint.jsonl")
     output_column = "predicted_description"
     start_index = 0
     model = get_lm(model_name)
