@@ -42,7 +42,7 @@ trainer_ckpt_path=$storage_dir/models/rl/$run_name/ckpt
 trainer_export_path=$storage_dir/models/rl/$run_name/final_checkpoint/
 
 
-
+skyrl_env_dir="SkyRL/skyrl-train/.venv/"
 source $skyrl_env_dir/bin/activate || { echo "Failed to activate virtual environment at $skyrl_env_dir. Check that the path is correct and that the virtual environment is set up properly."; exit 1; }
 uv pip install torch-c-dlpack-ext
 cd SkyRL/skyrl-train || { echo "SkyRL/skyrl-train directory not found. Make sure the path is correct."; exit 1; }

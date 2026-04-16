@@ -1,7 +1,5 @@
 storage_dir: "PLACEHOLDER" # Path to the directory where heavy duty storage will be done, meant for large files like models and datasets
 env_dir: "setup/.venv/" # Path to the virtual environment. If you have installed the venv in a different location, make sure to change this.
 huggingface_repo_namespace: "PLACEHOLDER" # The namespace (user or org) on the hub where the repo is located. Use this to sync large files
-huggingface_repo_name: "PLACEHOLDER" # The name of the repo on the hub. Use this to sync large files
-huggingface_storage_name: "PLACEHOLDER" # The name of the storage on the hub. Use this to sync large files. This is a new parameter that replaces huggingface_repo_name for better clarity.
-skyrl_env_dir: "PLACEHOLDER" # Path to the directory where the skyrl environment is located. This is needed for the training script to find the environment.
-WANDB_API_KEY: "PLACEHOLDER" # Your WandB API key, needed for logging training runs in SkyRL. You can get this from your WandB account settings.
+huggingface_repo_name: "PAU-Benchmark" # The name of the repo on the hub. Use this to sync large files
+huggingface_storage_name: "APIDiscovery-LFS" # The name of the storage on the hub. Use this to sync large files. This is a new parameter that replaces huggingface_repo_name for better clarity.

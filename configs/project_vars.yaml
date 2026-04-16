@@ -2,12 +2,11 @@ debug: False # Whether to run in debug mode, which will use a smaller subset of 
 random_seed: 42
 results_dir: "results" # Path to the directory where results will be saved, meant for lightweight files, plots and logs
 figure_skip_show: True # Indicates whether the Plotter object should save a figure or display it. In envs with no display you'll want to set this to True
-WANDB_PROJECT: "APIDiscovery" # This is more for bash than for within python. Will set the wandb logger to the right project
+WANDB_PROJECT: "function_discovery" # This is more for bash than for within python. Will set the wandb logger to the right project
 #benchmark_creation_model: "Qwen/Qwen3-32B" # Model used to create benchmark tasks
-benchmark_creation_model: "meta-llama/Llama-3.1-8B-Instruct" # Model used to create benchmark tasks
-benchmark_creation_model_engine: "huggingface"
+benchmark_creation_model: "gpt-4o" # Model used to create benchmark tasks
+benchmark_creation_model_engine: "openai"
 benchmark_expansion_model: "meta-llama/Llama-3.1-70B-Instruct" # Model used to expand benchmark examples
 evaluation_model_name: "meta-llama/Llama-3.1-70B-Instruct" # Model used for evaluation
 code_generation_model_name: "Qwen/Qwen3-Coder-30B-A3B-Instruct" # Model used for code generation
 input_output_prediction_model_name: "meta-llama/Llama-3.1-8B-Instruct" # Model used for input output prediction
-
