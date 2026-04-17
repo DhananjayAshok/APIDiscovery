@@ -13,12 +13,69 @@ figure_df_dir = f"{parameters['results_dir']}/figure_dfs/"
 plotter = Plotter()
 
 
+def determine_ranks(all_scores_list):
+    # list of scores
+    # determine rank of each score in the list, with 1 being the highest rank, and ties getting the same average rank
+    sorted_scores = sorted(all_scores_list, reverse=True)
+    ranks = []
+    for score in all_scores_list:
+        rank = sorted_scores.index(score) + 1
+        ranks.append(rank)
+    return ranks
+
+
+def rank_correlation(df):
+    df = df[df["Method"] == "interactive"].reset_index(drop=True)
+    df["unique_id"] = df["Model"]
+    df["ranks"] = df["all_scores"].apply(determine_ranks)
+    unique_ids = df["unique_id"].unique()
+    rank_matrix = []
+    for uid_1 in unique_ids:
+        row = []
+        for uid_2 in unique_ids:
+            ranks_1 = df[df["unique_id"] == uid_1]["ranks"].values[0]
+            ranks_2 = df[df["unique_id"] == uid_2]["ranks"].values[0]
+            correlation = pd.Series(ranks_1).corr(pd.Series(ranks_2), method="spearman")
+            row.append(correlation)
+        rank_matrix.append(row)
+    rank_matrix = pd.DataFrame(rank_matrix, index=unique_ids, columns=unique_ids)
+    return rank_matrix
+
+
+def get_score_df(df, score_col="all_scores"):
+    columns = ["Model", "Method"] + [f"score_{i}" for i in range(0, 741)]
+    data = []
+    for i, row in df.iterrows():
+        model = row["Model"]
+        method = row["Method"]
+        all_scores = row[score_col]
+        if len(all_scores) != 741:
+            print(
+                f"Warning: row {i} has {len(all_scores)} scores instead of 741, skipping."
+            )
+            continue
+        data.append([model, method] + all_scores)
+    score_df = pd.DataFrame(data, columns=columns)
+    return score_df
+
+
+def score_statistics(df, score_col="all_scores"):
+    score_columns = [f"score_{i}" for i in range(0, 741)]
+    score_df = get_score_df(df, score_col)
+    mins = score_df[score_columns].min()
+    maxs = score_df[score_columns].max()
+    means = score_df[score_columns].mean()
+    stds = score_df[score_columns].std()
+    return mins, maxs, means, stds
+
+
 def plot_description():
     df_path = f"{figure_df_dir}/description_stats.jsonl"
     if not os.path.exists(df_path):
         print(f"No description stats found at path {df_path}, skipping plot.")
         return
     df = pd.read_json(df_path, lines=True)
+    df.sort_values(by=["Model Order", "Method Order"], inplace=True)
     score_cols = [
         "percentage_score_1",
         "percentage_score_2",
@@ -35,8 +92,6 @@ def plot_description():
         return col
 
     df.rename(columns=rename_score_col, inplace=True)
-    # rename Method column zeroshot to interactive
-    df["Method"] = df["Method"].apply(lambda x: "interactive" if x == "zeroshot" else x)
     colours = [
         "dodgerblue",
         "orangered",
@@ -45,7 +100,6 @@ def plot_description():
         "seagreen",
     ]
     score_cols = [rename_score_col(col) for col in score_cols]
-    df.sort_values(by=["Model Order", "Method Order"], inplace=True)
     plot_func = plotter.get_stacked_bar_plot_func(
         df=df,
         x_col="Method",
@@ -53,13 +107,54 @@ def plot_description():
         colours=colours,
         skip_col="Model",
         x_tick_rotation=25,
-        skip_text_y_dip=50,
-        skip_text_rotation=7,
+        skip_text_y_dip=60,
+        skip_text_rotation=15,
         y_label="Score Spread (%)",
     )
 
     plot_func()
     plotter.show(save_path=f"description_score_spread.png")
+
+    interactive = df[df["Method"] == "interactive"].reset_index(drop=True)
+    # sort by the avg_score column:
+    interactive.sort_values(by="avg_score", inplace=True)
+    plot_func = plotter.get_stacked_bar_plot_func(
+        df=interactive,
+        x_col="Model",
+        stacked_cols=score_cols,
+        colours=colours,
+        x_tick_rotation=25,
+        y_label="Score Spread (%)",
+    )
+
+    plot_func()
+    plotter.show(save_path=f"description_score_spread_interactive.png")
+
+    def plot_func():
+        # venn diagram
+        rank_matrix = rank_correlation(df)
+        sns.heatmap(rank_matrix, annot=True, cmap="coolwarm", vmin=-1, vmax=1)
+        plt.title("Rank Correlation of Models on Description Scores")
+        plt.xlabel("Model")
+        plt.ylabel("Model")
+
+    plot_func()
+    plotter.show(save_path=f"description_score_rank_correlation.png")
+
+    def plot_func():
+        mins, maxs, means, stds = score_statistics(df)
+        # bar plot with means as height and stds as error bars:
+        sns.barplot(
+            x=means.index,
+            y=maxs.values,
+        )
+
+        plt.xticks(rotation=90)
+        plt.ylabel("Average Score (%)")
+        plt.title("Average Description Scores with Standard Deviation")
+
+    plot_func()
+    plotter.show(save_path=f"description_score_statistics.png")
 
 
 def plot_exact_match(kind):
@@ -141,14 +236,14 @@ def plot_exact_match(kind):
     "--kind",
     type=str,
     default=None,
-    help="metric category to plot (description, code, input, output)",
+    help="metric category to plot (description, code_task, code_eval, input, output)",
 )
 def plot(kind):
-    kinds = [kind] if kind else ["description", "code", "input", "output"]
+    kinds = [kind] if kind else ["description", "code_task", "code_eval"]
     for kind in kinds:
         if kind == "description":
             plot_description()
-        elif kind in ["code", "input", "output"]:
+        elif kind in ["code_task", "code_eval", "input", "output"]:
             plot_exact_match(kind)
         else:
             print(f"Plotting for kind {kind} not implemented yet, skipping.")
