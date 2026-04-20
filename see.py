@@ -28,6 +28,7 @@ model_aliases = {
     "deepseek-v3.2": "Deepseek-v3.2",
     "gemini-3.1-flash-lite-preview": "Gemini-3-Flash",
     "claude-opus-4.6": "Opus-4",
+    "gemma-3-4b-it": "Gemma-3-4B",
     "claude-sonnet-4.6": "Sonnet-4",
 }
 
@@ -35,9 +36,11 @@ model_orders = {
     "Llama3-1B": 0,
     "Llama3-8B": 0.5,
     "Qwen3-1.7B": 1,
+    "full-Qwen3-1.7B": 1,
     "Qwen3-Coder-30B": 1.2,    
     "Qwen3-8B": 1.25,
     "Qwen3-32B": 1.5,
+    "Gemma-3-4B": 1.7,
     "Granite-8B": 2,
     "GLM-5-Turbo": 2.5,
     "Deepseek-v3.2": 2.5,
@@ -58,8 +61,10 @@ model_scales = {
     "Granite-8B": 8,
     "Qwen3-Coder-30B": 3,
     "Qwen3-1.7B": 1.75,
+    "full-Qwen3-1.7B": 1.75,
     "GLM-5-turbo": 40,
     "Deepseek-v3.2": 37,
+    "Gemma-3-4B": 4,
 }
 
 parameters = load_parameters()
