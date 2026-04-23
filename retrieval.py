@@ -66,7 +66,7 @@ def embed_train(override_gen):
 
 @click.command()
 @click.option("--load_name", type=str, required=True, help="Name of the predictions file to load.")
-@click.option("--k", type=int, default=1, help="Number of top similar training examples to retrieve.")
+@click.option("--k", type=int, default=5, help="Number of top similar training examples to retrieve.")
 @click.option("--override_gen", is_flag=True, help="Whether to override existing retrieval.")
 def retrieve(load_name, k, override_gen):
     parameters = load_parameters()

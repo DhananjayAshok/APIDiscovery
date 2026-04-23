@@ -37,7 +37,7 @@ def interactive(model, runner, header, train_examples, max_iterations=20, max_pr
     prev_results = []
     for example in train_examples:
         prev_results.append((example[0], example[1], None))
-    reasoning_prompt = get_interactive_starting_prompt(header, prev_results, max_previous_results, critique=critique)
+    reasoning_prompt = get_interactive_starting_prompt(header, prev_results, full_fill=False, critique=critique)
     concluded = False
     if prev_hypothesis is None:
         hypothesis = "Not yet formed"
@@ -195,7 +195,8 @@ def run_memory(model_name, save_name, load_name, override_gen):
         "concluded",
         "predicted_description",
         "steps",
-        "all_examples"
+        "all_examples", 
+        "critique"
     ]
     for column in columns:
         dataset[column] = None
@@ -243,6 +244,7 @@ def run_memory(model_name, save_name, load_name, override_gen):
         dataset.at[i, "concluded"] = bool(concluded)
         dataset.at[i, "steps"] = steps
         dataset.at[i, "all_examples"] = repr_examples
+        dataset.at[i, "critique"] = critique
         save_dataset_df(dataset.copy(), checkpoint_path, verbose=False)
     save_dataset_df(dataset, save_path)
     if os.path.exists(checkpoint_path):
@@ -315,6 +317,8 @@ def critique(model, train_dataset, train_idx):
         test_examples.append((inp, out, None))
     true_results = get_prev_results_str(test_examples)
     true_description = train_row["description"]
+    if hypothesis is None:
+        hypothesis = "None"
     critique_prompt = critique_prompt.replace("[TRUE]", true_description).replace("[TRUE_EXAMPLES]", true_results).replace("[PREV_EXAMPLES]", prev_results_str).replace("[PREDICTED]", hypothesis)
     model_critique = model.infer(critique_prompt, max_new_tokens=300)
     return model_critique

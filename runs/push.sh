@@ -1,5 +1,5 @@
 
-exit 1
+#exit 1
 
 source scripts/utils.sh
 

@@ -30,6 +30,7 @@ model_aliases = {
     "claude-opus-4.6": "Opus-4",
     "gemma-3-4b-it": "Gemma-3-4B",
     "claude-sonnet-4.6": "Sonnet-4",
+    "gpt-oss-20b": "GPT-OSS-20B",
 }
 
 model_orders = {
@@ -44,6 +45,7 @@ model_orders = {
     "Granite-8B": 2,
     "GLM-5-Turbo": 2.5,
     "Deepseek-v3.2": 2.5,
+    "GPT-OSS-20B": 2.75,
     "GPT-4o-mini": 3,
     "GPT-4o": 4,
     "GPT-5-mini": 5,
@@ -65,6 +67,7 @@ model_scales = {
     "GLM-5-turbo": 40,
     "Deepseek-v3.2": 37,
     "Gemma-3-4B": 4,
+    "GPT-OSS-20B": 20,
 }
 
 parameters = load_parameters()
@@ -208,7 +211,7 @@ def comparisons(df, metric_col, col="Method"):
 
 
 def do_test(df, metric_col, save_name):
-    columns = ["Method 1", "Model 1", "Method 2", "Model 2", "p-value"]
+    columns = ["Method 1", "Model 1", "Method 2", "Model 2", "Winner", "p-value"]
     data = []
     log_info(f"Performing statistical tests for metric {metric_col}")
     for val1, sys1, val2, sys2 in comparisons(df, metric_col):
@@ -216,13 +219,27 @@ def do_test(df, metric_col, save_name):
             sys1,
             sys2,
         )
-        data.append([val1[0], val1[1], val2[0], val2[1], p_val])
+        avg_score1 = np.mean(sys1)
+        avg_score2 = np.mean(sys2)
+        winner = "Tie"
+        if avg_score1 > avg_score2:
+            winner = 1
+        elif avg_score2 > avg_score1:
+            winner = 2
+        data.append([val1[0], val1[1], val2[0], val2[1], winner, p_val])
     for val1, sys1, val2, sys2 in comparisons(df, metric_col, col="Model"):
+        avg_score1 = np.mean(sys1)
+        avg_score2 = np.mean(sys2)
+        winner = "Tie"
+        if avg_score1 > avg_score2:
+            winner = 1
+        elif avg_score2 > avg_score1:
+            winner = 2
         p_val = paired_bootstrap(
             sys1,
             sys2,
         )
-        data.append([val1[0], val1[1], val2[0], val2[1], p_val])
+        data.append([val1[1], val1[0], val2[1], val2[0], winner, p_val])
     result_df = pd.DataFrame(data, columns=columns)
     os.makedirs(f"results/statistical_tests/{save_name}", exist_ok=True)
     result_df.to_csv(f"results/statistical_tests/{save_name}/{save_name}.csv", index=False)

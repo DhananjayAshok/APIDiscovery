@@ -79,7 +79,7 @@ ln -s "${env_dir}" .venv
 echo "Activating environment and installing dependencies"
 source .venv/bin/activate
 
-uv sync
+uv sync --active
 
 echo "API Environment setup complete. You can activate it with 'source setup/.venv/bin/activate' or source scripts/utils.sh"
 

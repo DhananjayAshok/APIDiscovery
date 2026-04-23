@@ -56,7 +56,7 @@ model_name=${ARGS["model_name"]}
 
 model_save_name="${model_name#*/}"
 
-bash scripts/skyrl/move_skyrl.sh -m $model_name -j vllm -u false
+bash scripts/skyrl/move_skyrl.sh -m $model_name -j openrouter -u false
 
 echo "Start a bash job with the command above."
 echo "Remember to set you wandb properly." 
