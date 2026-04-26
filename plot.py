@@ -24,10 +24,10 @@ def determine_ranks(all_scores_list):
     return ranks
 
 
-def rank_correlation(df):
+def rank_correlation(df, metric_col="all_scores"):
     df = df[df["Method"] == "interactive"].reset_index(drop=True)
     df["unique_id"] = df["Model"]
-    df["ranks"] = df["all_scores"].apply(determine_ranks)
+    df["ranks"] = df[metric_col].apply(determine_ranks)
     unique_ids = df["unique_id"].unique()
     rank_matrix = []
     for uid_1 in unique_ids:
@@ -69,6 +69,86 @@ def score_statistics(df, score_col="all_scores"):
     return mins, maxs, means, stds
 
 
+def construct_max_score_row(df, score_col="all_scores"):
+    # add a new row to df with Model = "Max Score", Method = "N/A", and all_scores being the max score for each of the 741 samples across all models and methods
+    """
+        (Pdb) df.columns
+    Index(['Model', 'Method', 'avg_score', 'std_score', 'Score 1', 'Score 2',
+           'Score 3', 'Score 4', 'Score 5', 'percentage_score_3_or_greater',
+           'avg_queries', 'std_queries', 'concluded_percentage', 'all_scores',
+           'Method Order', 'Model Order', 'x_pos'],
+          dtype='object')
+        all_scores is a list with all scores, we gotta agg on that
+    """
+    # get first free index:
+    methods = df["Method"].unique()
+    for method in methods:
+        max_index = df.index.max() + 1
+        max_all_scores = None
+        for i, row in df.iterrows():
+            if row["Method"] != method:
+                continue
+            all_scores = row[score_col]
+            if max_all_scores is None:
+                max_all_scores = all_scores
+            else:
+                max_all_scores = [max(a, b) for a, b in zip(max_all_scores, all_scores)]
+        df.loc[max_index] = None
+        df.at[max_index, "Model"] = "Max"
+        df.at[max_index, "Method"] = method
+        df.at[max_index, score_col] = max_all_scores
+        # Score 1 is percentage of scores that are 1, Score 2 is percentage of scores that are 2, etc. so we can calculate those from the all_scores list:
+        if score_col == "all_scores":
+            for score in range(1, 6):
+                percentage_score = (
+                    sum([1 for s in max_all_scores if s == score])
+                    / len(max_all_scores)
+                    * 100
+                )
+                df.at[max_index, f"{score}"] = percentage_score
+            df.at[max_index, "avg_score"] = sum(max_all_scores) / len(max_all_scores)
+        else:
+            # count percentage 0-20%, 20-40%, 40-60%, 60-80%, 80-100% for exact match scores:
+            percentage_0_to_20 = (
+                sum([1 for s in max_all_scores if s < 0.2]) / len(max_all_scores) * 100
+            )
+            percentage_20_to_40 = (
+                sum([1 for s in max_all_scores if 0.2 <= s < 0.4])
+                / len(max_all_scores)
+                * 100
+            )
+            percentage_40_to_60 = (
+                sum([1 for s in max_all_scores if 0.4 <= s < 0.6])
+                / len(max_all_scores)
+                * 100
+            )
+            percentage_60_to_80 = (
+                sum([1 for s in max_all_scores if 0.6 <= s < 0.8])
+                / len(max_all_scores)
+                * 100
+            )
+            percentage_80_to_100 = (
+                sum([1 for s in max_all_scores if s >= 0.8]) / len(max_all_scores) * 100
+            )
+            df.at[max_index, "0-19%"] = percentage_0_to_20
+            df.at[max_index, "20-39%"] = percentage_20_to_40
+            df.at[max_index, "40-59%"] = percentage_40_to_60
+            df.at[max_index, "60-79%"] = percentage_60_to_80
+            df.at[max_index, "80-100%"] = percentage_80_to_100
+            df.at[max_index, "avg_exact_match"] = sum(max_all_scores) / len(
+                max_all_scores
+            )
+    return df
+
+
+def get_top_k_models_df(df, k=5, metric="avg_score"):
+    interactive = df[df["Method"] == "interactive"].reset_index(drop=True)
+    top_k = (
+        interactive.sort_values(by=metric, ascending=False).head(k)["Model"].tolist()
+    )
+    return df[df["Model"].isin(top_k)].reset_index(drop=True)
+
+
 def plot_description():
     df_path = f"{figure_df_dir}/description_stats.jsonl"
     if not os.path.exists(df_path):
@@ -88,7 +168,7 @@ def plot_description():
     def rename_score_col(col):
         for i in range(1, 6):
             if f"percentage_score_{i}" == col:
-                return f"Score {i}"
+                return f"{i}"
         return col
 
     df.rename(columns=rename_score_col, inplace=True)
@@ -100,20 +180,25 @@ def plot_description():
         "seagreen",
     ]
     score_cols = [rename_score_col(col) for col in score_cols]
+    top_k_df = get_top_k_models_df(df, k=5, metric="avg_score")
+    use_df = top_k_df[top_k_df["Method"].isin(["interactive", "incontext"])]
     plot_func = plotter.get_stacked_bar_plot_func(
-        df=df,
+        df=use_df,
         x_col="Method",
         stacked_cols=score_cols,
         colours=colours,
         skip_col="Model",
         x_tick_rotation=25,
-        skip_text_y_dip=60,
+        skip_text_y_dip=70,
         skip_text_rotation=15,
         y_label="Score Spread (%)",
+        tight_layout=False,
     )
 
     plot_func()
-    plotter.show(save_path=f"description_score_spread.png")
+    # plotter.show(save_path=f"description_score_spread")
+    print("Save plot with name description_score_spread")
+    plt.show()
 
     interactive = df[df["Method"] == "interactive"].reset_index(drop=True)
     # sort by the avg_score column:
@@ -128,55 +213,45 @@ def plot_description():
     )
 
     plot_func()
-    plotter.show(save_path=f"description_score_spread_interactive.png")
+    plotter.show(save_path=f"description_score_spread_interactive")
 
     def plot_func():
         # venn diagram
-        rank_matrix = rank_correlation(df)
+        rank_matrix = rank_correlation(top_k_df)
         sns.heatmap(rank_matrix, annot=True, cmap="coolwarm", vmin=-1, vmax=1)
+        # tilt the x labels:
+        plt.xticks(rotation=25)
+        plt.tight_layout()
         plt.title("Rank Correlation of Models on Description Scores")
-        plt.xlabel("Model")
-        plt.ylabel("Model")
+        plt.xlabel("")
+        plt.ylabel("")
 
     plot_func()
-    plotter.show(save_path=f"description_score_rank_correlation.png")
+    plotter.show(save_path=f"description_score_rank_correlation")
 
-    def plot_func():
-        mins, maxs, means, stds = score_statistics(df)
-        # bar plot with means as height and stds as error bars:
-        sns.barplot(
-            x=means.index,
-            y=maxs.values,
-        )
-
-        plt.xticks(rotation=90)
-        plt.ylabel("Average Score (%)")
-        plt.title("Average Description Scores with Standard Deviation")
+    construct_max_score_row(df)
+    interactive = df[df["Method"] == "interactive"].reset_index(drop=True)
+    plot_func = plotter.get_stacked_bar_plot_func(
+        df=interactive,
+        x_col="Model",
+        stacked_cols=score_cols,
+        colours=colours,
+        x_tick_rotation=25,
+        y_label="Score Spread (%)",
+    )
 
     plot_func()
-    plotter.show(save_path=f"description_score_statistics.png")
+    plotter.show(save_path=f"description_score_spread_interactive_w_max")
+    # plotter.test_sizes(plot_func)
 
 
 def plot_exact_match(kind):
+    plotter.set_size_parameters(legend_font_size=22)
     df_path = f"{figure_df_dir}/{kind}_stats.jsonl"
     if not os.path.exists(df_path):
         print(f"No {kind} stats found at path {df_path}, skipping plot.")
         return
     df = pd.read_json(df_path, lines=True)
-
-    def plot_func():
-        # make a bar_plot with avg_exact_match as height and std_exact_match as error bars, with x axis as method and hue as model
-        sns.barplot(
-            data=df,
-            x="Method",
-            y="avg_exact_match",
-            hue="Model",
-        )
-        plt.ylabel("Average Exact Match (%)")
-        plt.title(f"{kind.capitalize()} Exact Match")
-
-    plot_func()
-    plotter.show(save_path=f"{kind}_exact_match.png")
 
     df["percentage_exact_match_mid"] = (
         100 - df["percentage_exact_match_1"] - df["percentage_exact_match_0"]
@@ -215,20 +290,54 @@ def plot_exact_match(kind):
     ]
 
     df.sort_values(by=["Model Order", "Method Order"], inplace=True)
+    top_k_df = get_top_k_models_df(df, k=5, metric="avg_exact_match")
+    # keep only interactive and incontext settings:
+    use_df = top_k_df[top_k_df["Method"].isin(["interactive", "incontext"])]
     plot_func = plotter.get_stacked_bar_plot_func(
-        df=df,
+        df=use_df,
         x_col="Method",
         stacked_cols=cols,
         colours=colours,
         skip_col="Model",
         x_tick_rotation=25,
-        skip_text_y_dip=50,
+        skip_text_y_dip=70,
         skip_text_rotation=7,
-        y_label="Exact Match Spread (%)",
+        y_label="CS Spread (%)",
+        tight_layout=False,
     )
 
     plot_func()
-    plotter.show(save_path=f"{kind}_exact_match_spread.png")
+    # plotter.show(save_path=f"{kind}_exact_match_spread")
+    print(f"Save plot with name {kind}_exact_match_spread")
+    plt.show()
+
+    interactive = df[df["Method"] == "interactive"].reset_index(drop=True)
+    interactive.sort_values(by="avg_exact_match", inplace=True)
+    plot_func = plotter.get_stacked_bar_plot_func(
+        df=interactive,
+        x_col="Model",
+        stacked_cols=cols,
+        colours=colours,
+        x_tick_rotation=25,
+        y_label="CS Spread (%)",
+    )
+
+    plot_func()
+    plotter.show(save_path=f"{kind}_exact_match_spread_interactive")
+
+    construct_max_score_row(df, score_col="all_exact_matches")
+    interactive = df[df["Method"] == "interactive"].reset_index(drop=True)
+    plot_func = plotter.get_stacked_bar_plot_func(
+        df=interactive,
+        x_col="Model",
+        stacked_cols=cols,
+        colours=colours,
+        x_tick_rotation=25,
+        y_label="CS Spread (%)",
+    )
+
+    plot_func()
+    plotter.show(save_path=f"{kind}_exact_match_spread_interactive_w_max")
 
 
 @click.command()
