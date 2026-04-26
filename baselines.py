@@ -359,9 +359,9 @@ def get_interactive_from_row(model, row):
     prev_hypothesis = None
     critique = None
     try:
-        runner = RunTestFunc(test_func_str)
+        runner = RunTestFunc(test_func_str, timeout=30)
     except Exception as e:
-        log_warn(f"Error creating runner for test_func {test_func_str}")
+        log_warn(f"Error creating runner for test_func {test_func_str} \nError: {e}")
         return None, None, None, None, None
     if "critique" in row:
         prev_hypothesis = row["prev_hypothesis"]
@@ -639,6 +639,13 @@ def do_predict_code(
         examples_str = get_prev_results_str(row["all_examples"])
         use_description = row[prediction_column]
 
+        if use_description is None:
+            log_warn(f"Row has no description, using None instead for code generation prompt.")
+            use_description = "None"       
+        if func_header is None:
+            log_error(f"Row has no function header")
+        if examples_str is None:
+            log_error(f"Row has no examples")
         prompt = (
             code_prediction_prompt.replace("[DESCRIPTION]", use_description)
             .replace("[HEADER]", func_header)

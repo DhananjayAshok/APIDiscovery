@@ -104,6 +104,18 @@ def score_description_predictions(
                 log_error(
                     f"Row with columns: {row.keys()} does not contain a description column."
                 )
+            if row["predicted_description"] is None:
+                log_warn(
+                    f"Row has no predicted description, using None instead for score prompt."
+                )
+                row["predicted_description"] = "None"
+            if description is None:
+                log_error(f"Row has no description, cannot create score prompt.")
+            if row["predicted_description"] is None:
+                log_warn(
+                    f"Row has no predicted description, using None instead for score prompt."
+                )
+                row["predicted_description"] = "None"
             prompt_filled = eval_prompt.replace("[TRUE]", description).replace(
                 "[HYPOTHESIS]", row["predicted_description"]
             )
