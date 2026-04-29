@@ -31,6 +31,7 @@ model_aliases = {
     "gemma-3-4b-it": "Gemma-3-4B",
     "claude-sonnet-4.6": "Sonnet-4",
     "gpt-oss-20b": "GPT-OSS-20B",
+    "gpt-oss-120b": "GPT-OSS-120B",
 }
 
 model_orders = {
@@ -46,6 +47,7 @@ model_orders = {
     "GLM-5-Turbo": 2.5,
     "Deepseek-v3.2": 2.5,
     "GPT-OSS-20B": 2.75,
+    "GPT-OSS-120B": 2.85,
     "GPT-4o-mini": 3,
     "GPT-4o": 4,
     "GPT-5-mini": 5,
@@ -68,6 +70,7 @@ model_scales = {
     "Deepseek-v3.2": 37,
     "Gemma-3-4B": 4,
     "GPT-OSS-20B": 20,
+    "GPT-OSS-120B": 120
 }
 
 parameters = load_parameters()

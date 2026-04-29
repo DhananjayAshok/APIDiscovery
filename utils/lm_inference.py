@@ -948,7 +948,7 @@ def get_lm(model_name):
         model_engine = "openai"
     elif any_in(model_name, ["claude", "opus", "sonnet", "haiku"]):
         model_engine = "openrouter"
-    elif any_in(model_name, ["gemini", "minimax", "deepseek-v3.2", "kimi-k2.5", "gpt-oss", "glm"]):
+    elif any_in(model_name, ["gemini", "minimax", "deepseek-v3.2", "kimi-k2.5", "gpt-oss", "glm", "kimi"]):
         model_engine = "openrouter"
     else:
         model_engine = "huggingface"
